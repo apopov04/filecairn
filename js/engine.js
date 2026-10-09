@@ -2,7 +2,7 @@
 // and build the edited PDF with pdf-lib. Everything runs in the browser.
 
 import * as pdfjs from "../vendor/pdfjs/pdf.min.mjs";
-import { PDFDocument, degrees, rgb, BlendMode, StandardFonts, PDFHexString, PDFName } from "../vendor/pdf-lib/pdf-lib.esm.min.js";
+import { PDFDocument, degrees, rgb, BlendMode, StandardFonts, PDFHexString, PDFName, pushGraphicsState, popGraphicsState, setFillingRgbColor, rectangle, fill } from "../vendor/pdf-lib/pdf-lib.esm.min.js";
 import { norm } from "./pages.js";
 import { drawAnnots } from "./annots.js";
 
@@ -136,7 +136,7 @@ export async function buildPdf(sources, pages, { dpi = 200 } = {}) {
       page = out.addPage(copied.get(p.id));
       if (p.rot) page.setRotation(degrees(norm(page.getRotation().angle + p.rot)));
     }
-    if (p.annots?.length) await writeAnnots(out, page, p.annots, fonts);
+    if (p.annots?.length) await writeAnnots(out, page, p.annots, fonts, !!p.marks?.length);
   }
   out.setProducer("Filecairn"); out.setCreator("Filecairn");
   return out.save({ useObjectStreams: true });
@@ -173,26 +173,48 @@ async function addRedacted(out, src, p, dpi) {
 
 const color = (hex = "#000000") => { const n = parseInt(hex.slice(1), 16); return rgb((n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
 
-// Helvetica covers Western European text; anything else (Greek, Cyrillic,
-// Polish…) loads fontkit and embeds Liberation Sans, bundled with pdf.js.
-async function fontFor(out, text, fonts) {
-  fonts.helv ??= await out.embedFont(StandardFonts.Helvetica);
-  try { fonts.helv.encodeText(text); return fonts.helv; } catch { /* not WinAnsi */ }
-  if (!fonts.uni) {
+// The 14 standard PDF fonts cover Western European text; anything else
+// (Greek, Cyrillic, Polish…) loads fontkit and embeds Liberation Sans, which
+// is bundled with pdf.js (serif and mono fall back to it too).
+const STD = {
+  sans: ["Helvetica", "HelveticaBold", "HelveticaOblique", "HelveticaBoldOblique"],
+  serif: ["TimesRoman", "TimesRomanBold", "TimesRomanItalic", "TimesRomanBoldItalic"],
+  mono: ["Courier", "CourierBold", "CourierOblique", "CourierBoldOblique"],
+};
+const LIB = ["Regular", "Bold", "Italic", "BoldItalic"];
+async function fontFor(out, a, fonts) {
+  const v = (a.bold ? 1 : 0) + (a.italic ? 2 : 0), name = STD[a.font in STD ? a.font : "sans"][v];
+  fonts[name] ??= await out.embedFont(StandardFonts[name]);
+  try { fonts[name].encodeText(a.text); return fonts[name]; } catch { /* not WinAnsi */ }
+  const key = `lib-${v}`;
+  if (!fonts[key]) {
     if (!globalThis.fontkit) await new Promise((ok, fail) => { const sc = document.createElement("script"); sc.src = new URL("../vendor/fontkit/fontkit.umd.min.js", import.meta.url).href; sc.onload = ok; sc.onerror = fail; document.head.append(sc); });
-    out.registerFontkit(globalThis.fontkit);
-    const ttf = await (await fetch(VENDOR + "standard_fonts/LiberationSans-Regular.ttf")).arrayBuffer();
-    fonts.uni = await out.embedFont(ttf, { subset: true });
+    if (!fonts.kit) { out.registerFontkit(globalThis.fontkit); fonts.kit = true; }
+    const ttf = await (await fetch(`${VENDOR}standard_fonts/LiberationSans-${LIB[v]}.ttf`)).arrayBuffer();
+    fonts[key] = await out.embedFont(ttf, { subset: true });
   }
-  return fonts.uni;
+  return fonts[key];
 }
 
 /**
  * Markups (highlights, pen, shapes, text) are drawn into the page so they look
  * the same in every viewer. Sticky notes become real PDF comments.
  */
-async function writeAnnots(out, page, annots, fonts) {
+async function writeAnnots(out, page, annots, fonts, flattened) {
+  // Highlights made from text go *behind* the page content, so the text keeps
+  // its exact colour, like ink under a real highlighter. (Not on flattened
+  // redacted pages, where the content is an opaque image.)
+  const under = flattened ? [] : annots.filter((a) => a.type === "highlight" && a.onText);
+  if (under.length) {
+    const ops = [pushGraphicsState()];
+    for (const a of under) { const c = color(a.color); ops.push(setFillingRgbColor(c.red, c.green, c.blue)); for (const [x1, y1, x2, y2] of a.rects) ops.push(rectangle(x1, y1, x2 - x1, y2 - y1)); ops.push(fill()); }
+    ops.push(popGraphicsState());
+    const ref = out.context.register(out.context.contentStream(ops));
+    page.node.normalize();
+    page.node.Contents().insert(0, ref);
+  }
   for (const a of annots) {
+    if (under.includes(a)) continue;
     const c = color(a.color), w = a.width || 2;
     switch (a.type) {
       case "highlight":
@@ -222,7 +244,7 @@ async function writeAnnots(out, page, annots, fonts) {
       }
       case "text": {
         const r = norm(a.rot || 0), down = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] }[r];
-        const font = await fontFor(out, a.text, fonts);
+        const font = await fontFor(out, a, fonts);
         String(a.text).split("\n").forEach((line, j) => {
           const off = a.size * (0.8 + j * 1.2); // baseline of line j below the top edge
           page.drawText(line, { x: a.x + down[0] * off, y: a.y + down[1] * off, size: a.size, font, color: c, rotate: degrees(r) });

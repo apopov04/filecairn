@@ -1,11 +1,11 @@
 // Annotations: the model (pure geometry, unit-tested) and the canvas renderer
 // used for thumbnails and the page editor. Everything is in PDF user space
 // (points, y up), like redaction marks. A page carries them as page.annots:
-//   { type: "highlight" | "underline" | "strike", color, rects: [[x1,y1,x2,y2]] }
+//   { type: "highlight" | "underline" | "strike", color, rects: [[x1,y1,x2,y2]], onText }   (onText: made from selected text)
 //   { type: "ink", color, width, paths: [[x, y, x, y, ...]] }
 //   { type: "rect" | "ellipse", color, width, rect: [x1,y1,x2,y2] }
 //   { type: "line" | "arrow", color, width, from: [x, y], to: [x, y] }
-//   { type: "text", color, size, x, y, text, rot }      (x, y = top-left; rot = page rotation when typed)
+//   { type: "text", color, size, x, y, text, rot, font, bold, italic }   (x, y = top-left; rot = page rotation when typed; font: sans|serif|mono)
 //   { type: "note", color, x, y, text }                 (a sticky note / comment)
 
 import { indexText, boxesFor } from "./redact.js";
@@ -87,7 +87,10 @@ export function textRects(items, [x1, y1, x2, y2]) {
 
 /* ------------------------------ canvas renderer ----------------------------- */
 
-const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+/** CSS font for a text annotation at `px` pixels. */
+export const FONTS = { sans: "Helvetica, Arial, sans-serif", serif: '"Times New Roman", Times, serif', mono: '"Courier New", Courier, monospace' };
+export const cssFont = (a, px) => `${a.italic ? "italic " : ""}${a.bold ? "bold " : ""}${px}px ${FONTS[a.font] || FONTS.sans}`;
+
 
 /**
  * Draw annotations on a 2D context whose page was rendered with pdf.js
@@ -106,7 +109,8 @@ export function drawAnnots(ctx, vp, annots, selected = -1) {
     ctx.lineWidth = Math.max(1, (an.width || 2) * k);
     switch (an.type) {
       case "highlight":
-        ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = hexA(an.color, 0.45);
+        // Like a real highlighter: multiply keeps dark text dark instead of tinting it.
+        ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = an.color;
         for (const r of an.rects) ctx.fillRect(...box(r));
         break;
       case "underline": case "strike":
@@ -133,7 +137,7 @@ export function drawAnnots(ctx, vp, annots, selected = -1) {
         // on-screen rotation differs from when it was typed (an.rot).
         const [x, y] = P(an.x, an.y), pageRot = Math.round((Math.atan2(b, a) * 180) / Math.PI);
         ctx.translate(x, y); ctx.rotate(((pageRot - (an.rot || 0)) * Math.PI) / 180);
-        ctx.font = `${an.size * k}px Helvetica, Arial, sans-serif`; ctx.textBaseline = "top";
+        ctx.font = cssFont(an, an.size * k); ctx.textBaseline = "top";
         lines(an).forEach((l, j) => ctx.fillText(l, 0, j * an.size * 1.2 * k));
         break;
       }

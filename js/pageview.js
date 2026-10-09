@@ -6,7 +6,7 @@
 import * as P from "./pages.js";
 import { renderPage, textItems, rectToViewport, toUserSpace } from "./engine.js";
 import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
-import { COLORS, drawAnnots, hit, translate, textRects } from "./annots.js";
+import { COLORS, drawAnnots, hit, translate, textRects, cssFont } from "./annots.js";
 import { ph } from "./icons.js";
 
 const TOOLS = [
@@ -32,9 +32,12 @@ export function createPageView(ctx) {
     tool: saved.tool || "highlight",
     color: { highlight: "#ffd400", underline: "#d93f3f", strike: "#d93f3f", ink: "#d93f3f", rect: "#d93f3f", ellipse: "#d93f3f", line: "#d93f3f", arrow: "#d93f3f", text: "#1d1d1f", note: "#ffd400", ...saved.color },
     width: saved.width || 2, size: saved.size || 14,
+    font: saved.font || "sans", bold: !!saved.bold, italic: !!saved.italic,
   };
   const save = () => localStorage.setItem("fc-tools", JSON.stringify(opt));
   let id = null, base = null, over = null, sel = null, drag = null, editor = null, renderToken = 0;
+  let zoom = 1, anchor = null; // zoom relative to "fit"; anchor keeps a point under the cursor
+  let live = null; // { i, a }: an annotation being restyled (slider/picker drag), not yet committed
   // sel: { kind: "annot" | "mark", i }
 
   const el = document.createElement("section");
@@ -45,6 +48,7 @@ export function createPageView(ctx) {
       <button class="icon" data-a="prev" title="Previous page (←)" aria-label="Previous page">${ph("caret-left")}</button>
       <span class="rpage" aria-live="polite"></span>
       <button class="icon" data-a="next" title="Next page (→)" aria-label="Next page">${ph("caret-right")}</button>
+      <span class="zoom"><button class="icon" data-a="zout" title="Zoom out (−)" aria-label="Zoom out">${ph("magnifying-glass-minus")}</button><button class="zlabel" data-a="zfit" title="Fit to screen (0)" aria-label="Fit to screen">100%</button><button class="icon" data-a="zin" title="Zoom in (+)" aria-label="Zoom in">${ph("magnifying-glass-plus")}</button></span>
       <div class="tools" role="toolbar" aria-label="Tools">${TOOLS.map((t) => `<button class="icon tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}</button>`).join("")}</div>
     </div>
     <div class="rbody">
@@ -69,12 +73,15 @@ export function createPageView(ctx) {
     $(".rpage").textContent = `Page ${i + 1} of ${S.pages.length}`;
     $("[data-a=prev]").disabled = i === 0; $("[data-a=next]").disabled = i === S.pages.length - 1;
     const stage = $(".rstage");
-    const key = `${p.src}:${p.index}:${p.rot}:${p.blank ? `b${p.w}x${p.h}` : ""}:${stage.clientWidth}:${stage.clientHeight}`;
+    const key = `${p.src}:${p.index}:${p.rot}:${p.blank ? `b${p.w}x${p.h}` : ""}:${stage.clientWidth}:${stage.clientHeight}:${zoom}`;
     if (!base || base.key !== key) {
       const tok = ++renderToken;
       const own = p.blank ? 0 : S.sources[p.src].pages[p.index].own || 0, turned = P.norm(own + p.rot) % 180;
       const pw = turned ? p.h : p.w, phh = turned ? p.w : p.h;
-      const fit = Math.max(100, Math.min(stage.clientWidth - 32, ((stage.clientHeight - 32) * pw) / phh));
+      const fit0 = Math.max(100, Math.min(stage.clientWidth - 32, ((stage.clientHeight - 32) * pw) / phh));
+      // Zoom, capped so the canvas stays a sane size (~6000 device px wide).
+      zoom = Math.min(zoom, 6000 / (fit0 * Math.min(2, devicePixelRatio || 1)));
+      const fit = fit0 * zoom;
       const c = p.blank ? blankCanvas(p, fit) : await renderPage(S.sources[p.src], p.index, p.rot, fit);
       if (tok !== renderToken) return;
       c.key = key; c.style.width = `${fit}px`; c.className = "rbase";
@@ -83,6 +90,13 @@ export function createPageView(ctx) {
       over.width = c.width; over.height = c.height; over.style.width = c.style.width;
       box.replaceChildren(base, over);
       if (editor) box.append(editor.el);
+      $(".zlabel").textContent = `${Math.round(zoom * 100)}%`;
+      if (anchor) { // keep the document point under the cursor in place
+        const r = box.getBoundingClientRect();
+        stage.scrollLeft += r.left + anchor.fx * r.width - anchor.cx; stage.scrollTop += r.top + anchor.fy * r.height - anchor.cy;
+        anchor = null;
+      }
+      if (editor) placeEditor();
     }
     draw();
     renderPanel();
@@ -109,6 +123,7 @@ export function createPageView(ctx) {
     const g = over.getContext("2d");
     g.clearRect(0, 0, over.width, over.height);
     let list = annots();
+    if (live) list = list.map((a, i) => (i === live.i ? live.a : a));
     if (drag?.preview) list = drag.replace != null ? list.map((a, i) => (i === drag.replace ? drag.preview : a)) : [...list, drag.preview];
     // Redaction marks: dark with a red outline while editing (solid black once saved).
     const vp = base.viewport;
@@ -126,26 +141,51 @@ export function createPageView(ctx) {
 
   /* ---------------------------------- panel --------------------------------- */
 
+  // The panel edits the selected annotation if there is one, else the tool's defaults.
+  const target = () => (sel?.kind === "annot" ? annots()[sel.i] : null);
+  const kind = () => target()?.type || opt.tool;
+  const val = (k) => { const t = target(); return t && t[k] != null ? t[k] : k === "color" ? opt.color[kind()] : opt[k]; };
+  const slider = (prop, label, min, max, step, unit) => `<label class="sl"><span class="sl-top"><span>${label}</span><span class="num"><input type="number" data-prop="${prop}" min="${min}" max="${max}" step="${step}" value="${val(prop)}" inputmode="decimal" aria-label="${label}">${unit}</span></span><input type="range" data-prop="${prop}" min="${min}" max="${max}" step="${step}" value="${val(prop)}" aria-label="${label}"></label>`;
+
   function renderPanel() {
-    const t = TOOLS.find((x) => x.id === opt.tool);
+    const t = TOOLS.find((x) => x.id === opt.tool), k = kind(), tgt = target();
     el.querySelectorAll(".tool").forEach((b) => { const on = b.dataset.tool === opt.tool; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
     box.dataset.tool = opt.tool;
-    const parts = [`<h2>${t.label}</h2><p class="hint">${t.hint}</p>`];
-    const colors = opt.tool === "highlight" ? COLORS.highlight : opt.tool === "note" ? COLORS.note : COLORS.ink;
-    if (!["select", "redact"].includes(opt.tool)) {
-      parts.push(`<div class="swatches" role="radiogroup" aria-label="Color">${colors.map((c) => `<button class="sw${opt.color[opt.tool] === c ? " on" : ""}" role="radio" aria-checked="${opt.color[opt.tool] === c}" aria-label="Color ${c}" data-color="${c}" style="background:${c}"></button>`).join("")}</div>`);
+    const kt = TOOLS.find((x) => x.id === k);
+    const parts = [tgt ? `<h2>Selected ${kt.label.toLowerCase()}</h2><p class="hint">Changes below apply to it. Drag to move, Delete removes${["text", "note"].includes(k) ? ", double-click to edit the text" : ""}.</p>` : `<h2>${t.label}</h2><p class="hint">${t.hint}</p>`];
+    if (k !== "select" && k !== "redact") {
+      const colors = k === "highlight" ? COLORS.highlight : k === "note" ? COLORS.note : COLORS.ink, cur = val("color");
+      parts.push(`<div class="swatches" role="radiogroup" aria-label="Color">${colors.map((c) => `<button class="sw${cur === c ? " on" : ""}" role="radio" aria-checked="${cur === c}" aria-label="Color ${c}" data-color="${c}" style="background:${c}"></button>`).join("")}<label class="sw custom${colors.includes(cur) ? "" : " on"}" title="Custom color" style="--c:${cur}"><input type="color" data-prop="color" value="${cur}" aria-label="Custom color"></label></div>`);
     }
-    if (["ink", "rect", "ellipse", "line", "arrow"].includes(opt.tool)) parts.push(`<div class="seg" role="radiogroup" aria-label="Line width">${[1, 2, 4, 8].map((w) => `<button role="radio" aria-checked="${opt.width === w}" class="${opt.width === w ? "on" : ""}" data-width="${w}">${w} pt</button>`).join("")}</div>`);
-    if (opt.tool === "text") parts.push(`<div class="seg" role="radiogroup" aria-label="Text size">${[10, 14, 18, 24, 36].map((s) => `<button role="radio" aria-checked="${opt.size === s}" class="${opt.size === s ? "on" : ""}" data-size="${s}">${s}</button>`).join("")}</div>`);
+    if (["ink", "rect", "ellipse", "line", "arrow"].includes(k)) parts.push(slider("width", "Line width", 0.5, 20, 0.5, "pt"));
+    if (k === "text") {
+      parts.push(slider("size", "Text size", 6, 96, 1, "pt"));
+      parts.push(`<div class="seg" role="radiogroup" aria-label="Font">${[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"]].map(([f, l]) => `<button role="radio" aria-checked="${val("font") === f}" class="${val("font") === f ? "on" : ""}" data-font="${f}" style="font-family:${f === "serif" ? "Times New Roman, serif" : f === "mono" ? "Courier New, monospace" : "inherit"}">${l}</button>`).join("")}</div>`);
+      parts.push(`<div class="seg"><button aria-pressed="${!!val("bold")}" class="${val("bold") ? "on" : ""}" data-toggle="bold"><b>Bold</b></button><button aria-pressed="${!!val("italic")}" class="${val("italic") ? "on" : ""}" data-toggle="italic"><i>Italic</i></button></div>`);
+    }
     const n = annots().length;
     if (opt.tool !== "redact") {
       parts.push(`<div class="rcount">${n ? `${n} annotation${n === 1 ? "" : "s"} on this page` : "No annotations on this page yet."}</div>`);
       parts.push(`<div class="row wrap">${sel ? '<button data-a="delsel" class="danger">Delete selected</button>' : ""}${n ? '<button data-a="clearannots">Clear page annotations</button>' : ""}</div>`);
-      parts.push(`<p class="note">When you save, highlights, drawings, shapes and text are added to the page so they look the same in every PDF viewer. Sticky notes become comments you can open in Acrobat, Preview and others.</p>`);
+      parts.push(`<p class="note">When you save, highlights, drawings, shapes and text are added to the page so they look the same in every PDF viewer. Highlights on text go underneath it, so the text keeps its color. Sticky notes become comments you can open in Acrobat, Preview and others.</p>`);
     } else parts.push(redactPanel());
     panel.innerHTML = parts.join("");
     const q = panel.querySelector("#r-q"); if (q && lastQuery) q.value = lastQuery;
     const dpi = panel.querySelector("#r-dpi"); if (dpi) dpi.value = String(S.dpi);
+  }
+
+  // Apply a style change: to the selected annotation (live while dragging, committed on change) and to the defaults.
+  function setProp(prop, value, final) {
+    const k = kind();
+    if (prop === "color") opt.color[k] = value; else opt[prop] = value;
+    save();
+    const t = target();
+    if (t) {
+      const a = { ...t, [prop]: value };
+      if (final) { live = null; const list = annots().slice(); list[sel.i] = a; setAnnots(list, prop === "color" ? "recolor" : "restyle"); }
+      else { live = { i: sel.i, a }; draw(); }
+    }
+    if (editor && editor.annot.type === "text") { editor.annot = { ...editor.annot, [prop]: value }; styleEditor(); }
   }
 
   let lastQuery = "", found = null;
@@ -188,14 +228,25 @@ export function createPageView(ctx) {
   panel.addEventListener("click", (e) => {
     const t = e.target.closest("button"); if (!t) return;
     if (t.dataset.preset) return search(PRESETS[t.dataset.preset].re, PRESETS[t.dataset.preset].label.toLowerCase());
-    if (t.dataset.color) { opt.color[opt.tool] = t.dataset.color; save(); recolorSelected(t.dataset.color); return renderPanel(); }
-    if (t.dataset.width) { opt.width = +t.dataset.width; save(); return renderPanel(); }
-    if (t.dataset.size) { opt.size = +t.dataset.size; save(); return renderPanel(); }
+    if (t.dataset.color) { setProp("color", t.dataset.color, true); return renderPanel(); }
+    if (t.dataset.font) { setProp("font", t.dataset.font, true); return renderPanel(); }
+    if (t.dataset.toggle) { setProp(t.dataset.toggle, !val(t.dataset.toggle), true); return renderPanel(); }
   });
-  function recolorSelected(c) {
-    if (sel?.kind !== "annot") return;
-    const list = annots().slice(); list[sel.i] = { ...list[sel.i], color: c }; setAnnots(list, "recolor");
-  }
+  // Sliders, number fields and the color picker: live on input, committed on change.
+  const num = (inp) => { const v = +inp.value; return Math.min(+inp.max, Math.max(+inp.min, Number.isFinite(v) ? v : +inp.min)); };
+  panel.addEventListener("input", (e) => {
+    const p = e.target.dataset.prop; if (!p) return;
+    const v = p === "color" ? e.target.value : num(e.target);
+    panel.querySelectorAll(`[data-prop="${p}"]`).forEach((x) => { if (x !== e.target) x.value = v; });
+    if (p === "color") e.target.closest(".custom")?.style.setProperty("--c", v);
+    if (e.target.type !== "number" || e.target.value !== "") setProp(p, v, false);
+  });
+  panel.addEventListener("change", (e) => {
+    const p = e.target.dataset.prop; if (!p) return;
+    const v = p === "color" ? e.target.value : num(e.target);
+    e.target.value = v;
+    setProp(p, v, true); renderPanel();
+  });
 
   /* --------------------------------- editing -------------------------------- */
 
@@ -224,7 +275,12 @@ export function createPageView(ctx) {
       draw(); renderPanel(); return;
     }
     sel = null;
-    if (tool === "text") { openEditor({ type: "text", color, size: opt.size, x, y, text: "", rot: pageRot() }, true); return; }
+    if (tool === "text") {
+      // Clicking an existing text box edits it; elsewhere starts a new one.
+      const i = hit(annots(), x, y, 4 * ptsPerCss());
+      if (i >= 0 && annots()[i].type === "text") { sel = { kind: "annot", i }; openEditor(annots()[i], false, i); renderPanel(); return; }
+      openEditor({ type: "text", color, size: opt.size, font: opt.font, bold: opt.bold, italic: opt.italic, x, y, text: "", rot: pageRot() }, true); return;
+    }
     if (tool === "note") { openEditor({ type: "note", color, x, y, text: "" }, true); return; }
     drag = { mode: tool, x, y, pts: [x, y] };
   });
@@ -259,7 +315,7 @@ export function createPageView(ctx) {
         if (small(d.selRect)) { draw(); return; }
         rects = [d.selRect]; // area highlight (pictures, scans)
       }
-      addAnnot({ type: d.mode, color: opt.color[d.mode], rects }, d.mode);
+      addAnnot({ type: d.mode, color: opt.color[d.mode], rects, ...(rects[0] !== d.selRect && { onText: true }) }, d.mode);
     }
     draw(); renderPanel();
   });
@@ -275,21 +331,27 @@ export function createPageView(ctx) {
     const wrap = document.createElement("div"); wrap.className = `tbox ${annot.type}`;
     const ta = document.createElement("textarea"); ta.value = annot.text || ""; ta.setAttribute("aria-label", annot.type === "note" ? "Note text" : "Text");
     ta.placeholder = annot.type === "note" ? "Write a comment…" : "Type here";
-    const [x, y] = rectToViewport(base.viewport, [annot.x, annot.y, annot.x, annot.y]).map((v) => v / scale());
-    wrap.style.left = `${x}px`; wrap.style.top = `${y}px`;
-    if (annot.type === "text") {
-      const px = annot.size / ptsPerCss();
-      ta.style.fontSize = `${px}px`; ta.style.color = annot.color;
-      wrap.style.transform = `rotate(${pageRot() - (annot.rot || 0)}deg)`;
-    } else wrap.style.setProperty("--note", annot.color);
-    const grow = () => { ta.style.height = "auto"; ta.style.height = `${ta.scrollHeight}px`; ta.style.width = "auto"; ta.style.width = `${Math.max(120, Math.min(600, ta.scrollWidth + 8))}px`; };
+    const grow = () => { ta.style.height = "auto"; ta.style.height = `${ta.scrollHeight}px`; ta.style.width = "auto"; ta.style.width = `${Math.max(120, Math.min(900, ta.scrollWidth + 8))}px`; };
     ta.addEventListener("input", grow);
     ta.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") { e.preventDefault(); finishEditor(); } });
     wrap.append(ta); box.append(wrap);
-    editor = { el: wrap, ta, annot, isNew, index };
+    editor = { el: wrap, ta, annot, isNew, index, grow };
+    placeEditor(); styleEditor();
     draw();
     requestAnimationFrame(() => { grow(); ta.focus(); });
     ta.addEventListener("blur", () => setTimeout(() => { if (editor?.ta === ta) finishEditor(); }, 0));
+  }
+  function placeEditor() {
+    const a = editor.annot, [x, y] = rectToViewport(base.viewport, [a.x, a.y, a.x, a.y]).map((v) => v / scale());
+    editor.el.style.left = `${x}px`; editor.el.style.top = `${y}px`;
+    if (a.type === "text") editor.el.style.transform = `rotate(${pageRot() - (a.rot || 0)}deg)`;
+    styleEditor();
+  }
+  function styleEditor() {
+    const a = editor.annot, ta = editor.ta;
+    if (a.type === "text") { ta.style.font = cssFont(a, a.size / ptsPerCss()); ta.style.lineHeight = "1.2"; ta.style.color = a.color; }
+    else editor.el.style.setProperty("--note", a.color);
+    editor.grow();
   }
   function finishEditor() {
     const ed = editor; if (!ed) return;
@@ -315,15 +377,28 @@ export function createPageView(ctx) {
     if (a === "back") close();
     else if (a === "prev") go(-1);
     else if (a === "next") go(1);
+    else if (a === "zin") zoomBy(1.25);
+    else if (a === "zout") zoomBy(0.8);
+    else if (a === "zfit") zoomBy(0);
     else if (a === "delsel") removeSelected();
     else if (a === "clearannots") { if (annots().length) { setAnnots([], "clear annotations"); sel = null; } }
     else if (a === "clearpage") { if (marks().length) commit(P.setMarks(S.pages, id, []), "clear marks"); }
     else if (a === "clearall") { if (S.pages.some((p) => p.marks)) commit(P.clearMarks(S.pages), "clear all marks"); }
   });
+  // Zoom (0 = fit). With a pointer event, the point under the cursor stays put.
+  function zoomBy(f, e) {
+    const next = f ? Math.max(0.25, Math.min(8, zoom * f)) : 1;
+    if (next === zoom) return;
+    if (e && base) { const r = box.getBoundingClientRect(); anchor = { fx: (e.clientX - r.left) / r.width, fy: (e.clientY - r.top) / r.height, cx: e.clientX, cy: e.clientY }; }
+    zoom = next; show();
+  }
+  // Ctrl/Cmd + wheel (and trackpad pinch, which arrives as Ctrl+wheel) zooms.
+  $(".rstage").addEventListener("wheel", (e) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); zoomBy(Math.exp(-e.deltaY * 0.01), e); }, { passive: false });
+
   // Re-render only when the stage size really changes (show() compares the key).
   new ResizeObserver(() => { if (!el.hidden) show(); }).observe($(".rstage"));
 
-  function open(pageId, tool) { id = pageId ?? S.pages[0]?.id; if (tool) opt.tool = tool; sel = null; base = null; el.hidden = false; ctx.onToggle(true); show(); }
+  function open(pageId, tool) { id = pageId ?? S.pages[0]?.id; if (tool) opt.tool = tool; sel = null; base = null; zoom = 1; el.hidden = false; ctx.onToggle(true); show(); }
   function close() { finishEditor(); el.hidden = true; ctx.onToggle(false); }
 
   return {
@@ -335,6 +410,9 @@ export function createPageView(ctx) {
       if (e.target.closest?.("input, select, textarea")) return false;
       if (e.key === "Escape") { if (sel) { sel = null; draw(); renderPanel(); } else close(); return true; }
       if (e.key === "Delete" || e.key === "Backspace") return removeSelected() || true;
+      if (e.key === "+" || e.key === "=") { zoomBy(1.25); return true; }
+      if (e.key === "-") { zoomBy(0.8); return true; }
+      if (e.key === "0") { zoomBy(0); return true; }
       if (e.key === "ArrowLeft") { go(-1); return true; }
       if (e.key === "ArrowRight") { go(1); return true; }
       const t = TOOLS.find((x) => x.key === e.key.toLowerCase());

@@ -6,7 +6,7 @@
 - Open PDFs, JPG, PNG and WebP (images become pages). Open several files to merge them.
 - Reorder pages by dragging, rotate, duplicate, delete, insert blank pages.
 - Extract selected pages to a new PDF; split into parts (every N pages or ranges like 1-3, 4-8), downloaded as a ZIP.
-- Annotate: double-click a page (or Annotate) for the page editor: highlight/underline/strikethrough text, pen, rectangle, ellipse, line, arrow, text box, sticky note (keys H U S P R O L A T N; V selects/moves; X redacts). Markups are drawn into the page on save; text boxes stay real text; notes become PDF comments.
+- Annotate: double-click a page (or Annotate) for the page editor: highlight/underline/strikethrough text, pen, rectangle, ellipse, line, arrow, text box, sticky note (keys H U S P R O L A T N; V selects/moves; X redacts). Selecting an annotation lets you restyle it (any colour, width/size slider or exact number, Sans/Serif/Mono, bold, italic). Zoom: + / − / 0 or Ctrl+scroll. Markups are drawn into the page on save; text boxes stay real text; notes become PDF comments.
 - Redact for real: double-click a page (or the Redact button) to drag boxes, or search text / presets (emails, phone numbers, long numbers, IBANs) and mark all matches. On save, marked pages are flattened to images with the boxes burned in, so nothing underneath remains in the file; their text can't be selected afterwards.
 - Save the result. Source metadata (author, software, dates) isn't carried over.
 - Works offline once loaded. Coming next: fill & sign.

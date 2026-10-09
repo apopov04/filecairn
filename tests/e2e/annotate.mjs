@@ -3,6 +3,8 @@
 //   CHROME=/path/to/chrome URL=http://localhost:8090/ node tests/e2e/annotate.mjs
 import puppeteer from "puppeteer-core";
 import fs from "fs";
+import { PDFDocument } from "pdf-lib";
+import zlib from "zlib";
 
 const URL_ = process.env.URL || "http://localhost:8090/";
 const W = +process.env.W || 1280, H = +process.env.H || 800;
@@ -74,6 +76,32 @@ check("Delete removes it", (await annotsOf(2)).length === 6, null);
 await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
 check("Ctrl+Z brings it back", (await annotsOf(2)).length === 7, null);
 
+// Restyle the selected text box: custom color, size via the number field, serif + bold.
+await page.mouse.click(...await at(70, 772)); await sleep(150); // select "Hello Filecairn"
+check("clicking text selects it and the panel edits it", (await page.evaluate(() => document.querySelector(".rpanel h2").textContent)) === "Selected text box", await page.evaluate(() => document.querySelector(".rpanel h2").textContent));
+await page.evaluate(() => { const c = document.querySelector('.rpanel input[type=color]'); c.value = "#123456"; c.dispatchEvent(new Event("input", { bubbles: true })); c.dispatchEvent(new Event("change", { bubbles: true })); });
+await page.evaluate(() => { const n = document.querySelector('.rpanel input[type=number][data-prop=size]'); n.value = "28"; n.dispatchEvent(new Event("input", { bubbles: true })); n.dispatchEvent(new Event("change", { bubbles: true })); });
+await page.evaluate(() => document.querySelector('.rpanel [data-font=serif]').click());
+await page.evaluate(() => document.querySelector('.rpanel [data-toggle=bold]').click());
+a = (await annotsOf(2))[5];
+check("custom color, typed size, serif and bold applied to the selected text", a.color === "#123456" && a.size === 28 && a.font === "serif" && a.bold === true, a);
+// Text tool on existing text edits it.
+await page.keyboard.press("t");
+await page.mouse.click(...await at(70, 772)); await sleep(150);
+check("Text tool on existing text opens it for editing", (await page.evaluate(() => document.querySelector(".tbox textarea")?.value)) === "Hello Filecairn", null);
+await page.keyboard.press("End"); await page.keyboard.type("!"); await page.keyboard.press("Escape"); await sleep(150);
+check("edit saved", (await annotsOf(2))[5].text === "Hello Filecairn!", (await annotsOf(2))[5].text);
+check("highlight on text is flagged to go under the text", (await annotsOf(2))[0].onText === true, (await annotsOf(2))[0]);
+// Zoom.
+const w0 = await page.evaluate(() => document.querySelector(".rbase").getBoundingClientRect().width);
+await page.evaluate(() => document.querySelector("[data-a=zin]").click()); await sleep(400);
+await page.evaluate(() => document.querySelector("[data-a=zin]").click()); await sleep(400);
+const z = await page.evaluate(() => [document.querySelector(".zlabel").textContent, document.querySelector(".rbase").getBoundingClientRect().width]);
+check("zoom in twice -> 156% and a bigger page", z[0] === "156%" && Math.abs(z[1] / w0 - 1.5625) < 0.02, { w0, z });
+await shot("A1b-zoomed");
+await page.keyboard.press("0"); await sleep(300);
+check("0 fits again", (await page.evaluate(() => document.querySelector(".zlabel").textContent)) === "100%", null);
+
 // Text on the pre-rotated page 5 (rotated 90°) and non-Latin text on page 1.
 await page.keyboard.press("ArrowRight"); await page.keyboard.press("ArrowRight"); await page.keyboard.press("ArrowRight"); await sleep(400);
 await page.keyboard.press("t");
@@ -98,7 +126,14 @@ const res = await page.evaluate(async () => {
   }
   return out;
 });
-check("text box is real text in the saved PDF", res[1].text.includes("Hello Filecairn"), res[1].text);
+check("text box is real text in the saved PDF", res[1].text.includes("Hello Filecairn!"), res[1].text);
+// The text highlight must be the first content stream on page 2 (drawn under the text).
+const bytes = Buffer.from(await page.evaluate(async () => { const b = await filecairn.exportPdf({ as: "bytes" }); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s); }), "base64");
+const pd = await PDFDocument.load(bytes), p2 = pd.getPages()[1];
+p2.node.normalize();
+const streams = p2.node.Contents().asArray().map((ref) => { const raw = Buffer.from(pd.context.lookup(ref).getContents()); return (raw[0] === 0x78 ? zlib.inflateSync(raw) : raw).toString("latin1"); });
+const hl = streams.findIndex((t) => /1 0\.8\d* 0 rg/.test(t) && / re\b/.test(t)), txt = streams.findIndex((t) => /Tj|TJ/.test(t));
+check("highlight is painted before (under) the page text", hl >= 0 && hl < txt, { hl, txt, starts: streams.map((t) => t.slice(0, 30)) });
 check("original text is still there", res[1].text.includes("jane.doe@example.com"), res[1].text);
 check("sticky note is a real PDF comment", res[1].annots.some((x) => x.sub === "Text" && x.contents === "Check this"), res[1].annots);
 const rot = res[4].items.find((it) => it.s === "Rotated OK");
