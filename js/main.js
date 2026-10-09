@@ -6,7 +6,7 @@ import { loadFile, renderPage, buildPdf } from "./engine.js";
 import { zip } from "./zip.js";
 import { ph } from "./icons.js";
 import { installApi } from "./api.js";
-import { createRedactView } from "./redactview.js";
+import { createPageView } from "./pageview.js";
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app"), grid = $("#grid"), main = $("#main");
@@ -117,11 +117,11 @@ function pump() {
   while (rendering < 3 && queue.length) {
     const card = queue.shift(), p = card._page;
     if (!card.isConnected || p.blank) continue;
-    const key = `${p.src}:${p.index}:${p.rot}:${thumbW}:${JSON.stringify(p.marks || [])}`;
+    const key = `${p.src}:${p.index}:${p.rot}:${thumbW}:${JSON.stringify([p.marks, p.annots])}`;
     const box = card.querySelector(".page");
     if (thumbs.has(key)) { box.replaceChildren(thumbs.get(key)); continue; }
     rendering++;
-    renderPage(S.sources[p.src], p.index, p.rot, thumbW, p.marks)
+    renderPage(S.sources[p.src], p.index, p.rot, thumbW, p.marks, p.annots)
       .then((c) => { thumbs.set(key, c); if (card._page === p) box.replaceChildren(c); })
       .catch(() => { box.textContent = "Can't show"; })
       .finally(() => { rendering--; pump(); });
@@ -196,7 +196,8 @@ const ACTIONS = {
     await download(await busy("Extracting", () => buildPdf(S.sources, pages, { dpi: S.dpi })), `${docName()}-pages.pdf`, "application/pdf");
   },
   split: () => openSplit(),
-  redact: () => rview.open(S.pages.find((p) => S.sel.has(p.id))?.id),
+  redact: () => rview.open(S.pages.find((p) => S.sel.has(p.id))?.id, "redact"),
+  annotate: () => rview.open(S.pages.find((p) => S.sel.has(p.id))?.id, rview.lastMarkup()),
   save: () => save(),
 };
 
@@ -207,7 +208,7 @@ function renderActions() {
     el.className = cls; el.title = title; el.setAttribute("aria-label", label);
     el.innerHTML = `${ph(icon)}<span class="lbl">${label}</span>`;
     el.onclick = ACTIONS[key]; el.dataset.key = key;
-    if (!n && !["all", "none", "blank", "split", "redact"].includes(key)) el.disabled = true;
+    if (!n && !["all", "none", "blank", "split", "redact", "annotate"].includes(key)) el.disabled = true;
     return el;
   };
   const sep = () => Object.assign(document.createElement("span"), { className: "sep" });
@@ -225,7 +226,8 @@ function renderActions() {
     b("extract", "export", "Extract", "Save the selected pages as a new PDF"),
     b("split", "scissors", "Split", "Split into several PDFs"),
     sep(),
-    b("redact", "eye-slash", "Redact", "Black out text and areas for good (double-click a page)"),
+    b("annotate", "highlighter", "Annotate", "Highlight, draw, add text and notes (double-click a page)"),
+    b("redact", "eye-slash", "Redact", "Black out text and areas for good"),
   ];
   $("#actions").replaceChildren(...els);
 }
@@ -402,7 +404,7 @@ function toast(msg, ms = 2600) {
 }
 function status(s) { $("#status").textContent = s; }
 
-// Double-click a page to redact it.
+// Double-click a page to open it in the editor.
 grid.addEventListener("dblclick", (e) => { const c = cardOf(e.target); if (c) rview.open(+c.dataset.id); });
 
 addEventListener("keydown", (e) => {
@@ -426,6 +428,6 @@ addEventListener("beforeunload", (e) => { if (S.undo.length) e.preventDefault();
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 
-const rview = createRedactView({ S, commit, toast, root: main, onToggle: (open) => { app.classList.toggle("redacting", open); if (!open) render(); } });
+const rview = createPageView({ S, commit, toast, root: main, onToggle: (open) => { app.classList.toggle("redacting", open); if (!open) render(); } });
 installApi({ S, addFiles, commit, render, buildPdf: (src, pages) => buildPdf(src, pages, { dpi: S.dpi }), actions: ACTIONS, undo, redo, docName, rview });
 render();

@@ -32,6 +32,7 @@ check("text search finds 'John Smith' on page 4", r.matches === 1 && r.pages.joi
 const c1 = await page.evaluate(() => { const r = document.querySelectorAll(".card")[0].getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
 await page.mouse.click(...c1, { count: 2 });
 await page.waitForSelector(".rpagebox canvas", { timeout: 10000 });
+await page.keyboard.press("x"); // Redact tool
 await new Promise((res) => setTimeout(res, 300));
 const box = await page.evaluate(() => { const r = document.querySelector(".rpagebox canvas").getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
 await page.mouse.move(box.x + box.w * .3, box.y + box.h * .35); await page.mouse.down();

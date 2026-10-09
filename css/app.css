@@ -108,19 +108,14 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 /* Redaction view */
 #app.redacting { grid-template-rows: auto minmax(0, 1fr) auto; }
 #app.redacting .grid, #app.redacting .actions, #app.redacting .statusbar .size { display: none !important; }
-.rview { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--bg); }
+.rview { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); background: var(--bg); }
 .rbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .rpage { min-width: 100px; text-align: center; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .rbody { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; }
 .rstage { overflow: auto; display: grid; place-items: center; padding: 16px; }
-.rpagebox { position: relative; box-shadow: 0 2px 6px rgba(0,0,0,.2), 0 10px 30px rgba(0,0,0,.1); background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rpagebox { position: relative; line-height: 0; box-shadow: 0 2px 6px rgba(0,0,0,.2), 0 10px 30px rgba(0,0,0,.1); background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
 .rpagebox canvas { display: block; }
 .rpagebox.blank { width: 300px; aspect-ratio: .7071; cursor: default; }
-.rmarks { position: absolute; inset: 0; pointer-events: none; }
-.rmark { position: absolute; padding: 0; border: 0; border-radius: 0; background: rgba(0,0,0,.82); outline: 1px solid #ff2d55; pointer-events: auto; cursor: pointer; }
-.rmark:hover:not(:disabled) { background: rgba(0,0,0,.7); }
-.rmark.sel { outline: 2px solid #ff2d55; outline-offset: 1px; background: rgba(0,0,0,.6); }
-.rmark.drawing { background: rgba(0,0,0,.45); outline: 1px dashed #ff2d55; pointer-events: none; }
 .rpanel { border-left: 1px solid var(--line); background: var(--surface); padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
 .rpanel h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .rpanel .hint, .rpanel .note, .rcount { margin: 0; color: var(--muted); font-size: 13px; }
@@ -137,5 +132,23 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .card.has-marks .thumb::after { content: "Redacted"; position: absolute; top: 12px; right: 12px; background: #000; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; border-radius: 4px; }
 @media (max-width: 760px) {
   .rbody { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .rpanel { border-left: 0; border-top: 1px solid var(--line); max-height: 42vh; }
+  .rpanel { border-left: 0; border-top: 1px solid var(--line); height: 38vh; }
 }
+
+.rpagebox canvas.rover { position: absolute; inset: 0; }
+.rpagebox[data-tool=select] { cursor: default; }
+.rpagebox[data-tool=text] { cursor: text; }
+.rpagebox[data-tool=note] { cursor: copy; }
+.tools { display: flex; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.tools .tool { padding: 6px; border-radius: 8px; }
+.tools .tool.on { background: var(--accent); color: var(--accent-ink); }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.sw { width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid var(--line); }
+.sw.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg button { padding: 5px 10px; font-size: 13px; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tbox { position: absolute; transform-origin: 0 0; line-height: 1.2; z-index: 2; }
+.tbox textarea { display: block; border: 1px dashed var(--accent); background: rgba(255,255,255,.85); color: #1d1d1f; padding: 0; margin: 0; resize: none; overflow: hidden; font-family: Helvetica, Arial, sans-serif; line-height: 1.2; min-width: 120px; outline: none; white-space: pre; }
+.tbox.note textarea { background: var(--note, #ffd400); border: 1px solid rgba(0,0,0,.25); border-radius: 6px; padding: 8px; font-size: 13px; width: 220px !important; min-height: 90px; white-space: pre-wrap; box-shadow: var(--shadow); }
+@media (max-width: 760px) { .rbar { flex-wrap: wrap; } .tools { margin-left: 0; width: 100%; } }

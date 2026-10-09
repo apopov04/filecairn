@@ -2,8 +2,9 @@
 // and build the edited PDF with pdf-lib. Everything runs in the browser.
 
 import * as pdfjs from "../vendor/pdfjs/pdf.min.mjs";
-import { PDFDocument, degrees } from "../vendor/pdf-lib/pdf-lib.esm.min.js";
+import { PDFDocument, degrees, rgb, BlendMode, StandardFonts, PDFHexString, PDFName } from "../vendor/pdf-lib/pdf-lib.esm.min.js";
 import { norm } from "./pages.js";
+import { drawAnnots } from "./annots.js";
 
 const VENDOR = new URL("../vendor/pdfjs/", import.meta.url).href;
 pdfjs.GlobalWorkerOptions.workerSrc = VENDOR + "pdf.worker.min.mjs";
@@ -94,7 +95,7 @@ export async function textItems(src, index) {
  * `rot`, and redaction marks drawn as black boxes. canvas.viewport is the
  * pdf.js viewport (device pixels), for mapping between screen and user space.
  */
-export async function renderPage(src, index, rot, width, marks = null) {
+export async function renderPage(src, index, rot, width, marks = null, annots = null) {
   const page = await src.pdf.getPage(index + 1);
   const rotation = norm((page.rotate || 0) + rot);
   const base = page.getViewport({ scale: 1, rotation });
@@ -106,6 +107,7 @@ export async function renderPage(src, index, rot, width, marks = null) {
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
   burnMarks(ctx, vp, marks);
+  drawAnnots(ctx, vp, annots);
   canvas.viewport = vp;
   return canvas;
 }
@@ -123,15 +125,18 @@ export async function buildPdf(sources, pages, { dpi = 200 } = {}) {
     const got = await out.copyPages(libs.get(src), list.map((p) => p.index));
     list.forEach((p, i) => copied.set(p.id, got[i]));
   }
+  const fonts = {};
   for (const p of pages) {
+    let page;
     if (p.blank) {
-      const page = out.addPage([p.w, p.h]);
+      page = out.addPage([p.w, p.h]);
       if (p.rot) page.setRotation(degrees(p.rot));
-      continue;
+    } else if (p.marks?.length) page = await addRedacted(out, sources[p.src], p, dpi);
+    else {
+      page = out.addPage(copied.get(p.id));
+      if (p.rot) page.setRotation(degrees(norm(page.getRotation().angle + p.rot)));
     }
-    if (p.marks?.length) { await addRedacted(out, sources[p.src], p, dpi); continue; }
-    const page = out.addPage(copied.get(p.id));
-    if (p.rot) page.setRotation(degrees(norm(page.getRotation().angle + p.rot)));
+    if (p.annots?.length) await writeAnnots(out, page, p.annots, fonts);
   }
   out.setProducer("Filecairn"); out.setCreator("Filecairn");
   return out.save({ useObjectStreams: true });
@@ -161,6 +166,78 @@ async function addRedacted(out, src, p, dpi) {
   np.drawImage(img, { x: 0, y: 0, width: base.width, height: base.height });
   const rot = norm((page.rotate || 0) + p.rot);
   if (rot) np.setRotation(degrees(rot));
+  return np;
+}
+
+/* ----------------------------- annotations -> PDF ---------------------------- */
+
+const color = (hex = "#000000") => { const n = parseInt(hex.slice(1), 16); return rgb((n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
+
+// Helvetica covers Western European text; anything else (Greek, Cyrillic,
+// Polish…) loads fontkit and embeds Liberation Sans, bundled with pdf.js.
+async function fontFor(out, text, fonts) {
+  fonts.helv ??= await out.embedFont(StandardFonts.Helvetica);
+  try { fonts.helv.encodeText(text); return fonts.helv; } catch { /* not WinAnsi */ }
+  if (!fonts.uni) {
+    if (!globalThis.fontkit) await new Promise((ok, fail) => { const sc = document.createElement("script"); sc.src = new URL("../vendor/fontkit/fontkit.umd.min.js", import.meta.url).href; sc.onload = ok; sc.onerror = fail; document.head.append(sc); });
+    out.registerFontkit(globalThis.fontkit);
+    const ttf = await (await fetch(VENDOR + "standard_fonts/LiberationSans-Regular.ttf")).arrayBuffer();
+    fonts.uni = await out.embedFont(ttf, { subset: true });
+  }
+  return fonts.uni;
+}
+
+/**
+ * Markups (highlights, pen, shapes, text) are drawn into the page so they look
+ * the same in every viewer. Sticky notes become real PDF comments.
+ */
+async function writeAnnots(out, page, annots, fonts) {
+  for (const a of annots) {
+    const c = color(a.color), w = a.width || 2;
+    switch (a.type) {
+      case "highlight":
+        for (const [x1, y1, x2, y2] of a.rects) page.drawRectangle({ x: x1, y: y1, width: x2 - x1, height: y2 - y1, color: c, opacity: 0.45, blendMode: BlendMode.Multiply });
+        break;
+      case "underline": case "strike":
+        for (const [x1, y1, x2, y2] of a.rects) { const y = y1 + (y2 - y1) * (a.type === "underline" ? 0.18 : 0.45); page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, thickness: 1.2, color: c }); }
+        break;
+      case "ink":
+        for (const p of a.paths) {
+          let d = `M ${p[0]} ${-p[1]}`;
+          for (let i = 2; i < p.length; i += 2) d += ` L ${p[i]} ${-p[i + 1]}`;
+          if (p.length === 2) d += ` L ${p[0] + 0.01} ${-p[1]}`;
+          page.drawSvgPath(d, { x: 0, y: 0, borderColor: c, borderWidth: w, borderLineCap: 1 });
+        }
+        break;
+      case "rect": { const [x1, y1, x2, y2] = a.rect; page.drawRectangle({ x: x1, y: y1, width: x2 - x1, height: y2 - y1, borderColor: c, borderWidth: w }); break; }
+      case "ellipse": { const [x1, y1, x2, y2] = a.rect; page.drawEllipse({ x: (x1 + x2) / 2, y: (y1 + y2) / 2, xScale: (x2 - x1) / 2, yScale: (y2 - y1) / 2, borderColor: c, borderWidth: w }); break; }
+      case "line": case "arrow": {
+        const [x1, y1] = a.from, [x2, y2] = a.to;
+        page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: w, color: c, lineCap: 1 });
+        if (a.type === "arrow") {
+          const ang = Math.atan2(y2 - y1, x2 - x1), len = Math.max(8, w * 4);
+          for (const s of [-0.45, 0.45]) page.drawLine({ start: { x: x2, y: y2 }, end: { x: x2 - len * Math.cos(ang + s), y: y2 - len * Math.sin(ang + s) }, thickness: w, color: c, lineCap: 1 });
+        }
+        break;
+      }
+      case "text": {
+        const r = norm(a.rot || 0), down = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] }[r];
+        const font = await fontFor(out, a.text, fonts);
+        String(a.text).split("\n").forEach((line, j) => {
+          const off = a.size * (0.8 + j * 1.2); // baseline of line j below the top edge
+          page.drawText(line, { x: a.x + down[0] * off, y: a.y + down[1] * off, size: a.size, font, color: c, rotate: degrees(r) });
+        });
+        break;
+      }
+      case "note": {
+        const ctx = out.context, cc = color(a.color || "#ffd400");
+        const annot = ctx.obj({ Type: "Annot", Subtype: "Text", Rect: [a.x, a.y - 18, a.x + 18, a.y], Name: "Comment", F: 4, Open: false, C: [cc.red, cc.green, cc.blue] });
+        annot.set(PDFName.of("Contents"), PDFHexString.fromText(a.text || ""));
+        page.node.addAnnot(ctx.register(annot));
+        break;
+      }
+    }
+  }
 }
 
 function groupBySource(pages) {

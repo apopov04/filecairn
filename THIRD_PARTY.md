@@ -9,5 +9,8 @@ Filecairn bundles the following so it runs fully offline, with no requests to ot
 ## pdf-lib (`vendor/pdf-lib/`)
 - Version 1.17.1, from https://github.com/Hopding/pdf-lib. MIT License. See `vendor/pdf-lib/LICENSE.md`.
 
+## fontkit (`vendor/fontkit/`)
+- `@pdf-lib/fontkit` 1.1.1, https://github.com/Hopding/fontkit. MIT License. Loaded only when a text box contains characters outside Western European (WinAnsi) encoding, to embed Liberation Sans (bundled with PDF.js).
+
 ## Phosphor Icons (`js/icons.js`)
 - Regular weight, from https://phosphoricons.com (`@phosphor-icons/core` 2.1.1). MIT License, © Phosphor Icons.

@@ -19,6 +19,8 @@ const METHODS = [
   ["markText(query | { preset })", "Mark every match of plain text (case-insensitive) or a preset (\"email\", \"phone\", \"number\", \"iban\") for redaction. Returns { matches, pages }."],
   ["markArea(page, [x1, y1, x2, y2])", "Mark a rectangle for redaction, in PDF points from the page's bottom-left (as in the original page, before any rotation)."],
   ["clearMarks(pages?)", "Remove redaction marks (all pages if omitted)."],
+  ["addAnnotation(page, annotation)", "Add an annotation in PDF points (y up, from the page's bottom-left). Types: { type: \"highlight\"|\"underline\"|\"strike\", color, rects: [[x1,y1,x2,y2]] }, { type: \"ink\", color, width, paths: [[x,y,x,y,…]] }, { type: \"rect\"|\"ellipse\", color, width, rect }, { type: \"line\"|\"arrow\", color, width, from: [x,y], to: [x,y] }, { type: \"text\", x, y (top-left), size, color, text }, { type: \"note\", x, y, color, text }. Colors are #rrggbb."],
+  ["clearAnnotations(pages?)", "Remove annotations (all pages if omitted)."],
   ["exportPdf({ pages, as })", "Build the PDF (optionally only some pages). as: \"blob\" (default), \"bytes\" or \"dataurl\". Doesn't download."],
   ["save()", "Download the whole PDF, like the Save button."],
   ["undo() / redo()", "Undo or redo the last change."],
@@ -40,7 +42,7 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     throw new Error("open() takes File/Blob objects or data: URLs. (Fetching other websites is blocked by Filecairn's privacy policy.)");
   };
   const api = {
-    version: "0.2.0", apiVersion: 1,
+    version: "0.3.0", apiVersion: 1,
     help: () => METHODS.map(([sig, desc]) => ({ sig, desc })),
     async open(files) {
       const list = await Promise.all((Array.isArray(files) ? files : [files]).map(toFile));
@@ -51,7 +53,7 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     info() {
       return {
         name: S.name, pageCount: S.pages.length,
-        pages: S.pages.map((p, i) => ({ page: i + 1, blank: !!p.blank, rotation: p.rot, redactions: p.marks?.length || 0, width: Math.round(p.w), height: Math.round(p.h), source: p.blank ? null : S.sources[p.src].name })),
+        pages: S.pages.map((p, i) => ({ page: i + 1, blank: !!p.blank, rotation: p.rot, redactions: p.marks?.length || 0, annotations: p.annots || [], width: Math.round(p.w), height: Math.round(p.h), source: p.blank ? null : S.sources[p.src].name })),
         selected: S.pages.map((p, i) => (S.sel.has(p.id) ? i + 1 : 0)).filter(Boolean),
         canUndo: S.undo.length > 0, canRedo: S.redo.length > 0,
       };
@@ -81,6 +83,20 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
       if (!Array.isArray(rect) || rect.length !== 4 || rect.some((v) => typeof v !== "number")) throw new Error("rect must be [x1, y1, x2, y2] in PDF points.");
       commit(P.setMarks(S.pages, id, [...(p.marks || []), normRect(rect)]), "mark area");
       return api.info();
+    },
+    async addAnnotation(page, a) {
+      need(); const id = [...ids([page], "page")][0], p = S.pages.find((q) => q.id === id);
+      const ok = { highlight: ["rects"], underline: ["rects"], strike: ["rects"], ink: ["paths"], rect: ["rect"], ellipse: ["rect"], line: ["from", "to"], arrow: ["from", "to"], text: ["x", "y", "text"], note: ["x", "y"] }[a?.type];
+      if (!ok) throw new Error("Unknown annotation type. See filecairn.help().");
+      for (const k of ok) if (a[k] == null) throw new Error(`A ${a.type} annotation needs "${k}".`);
+      const an = { color: a.type === "highlight" || a.type === "note" ? "#ffd400" : "#d93f3f", width: 2, size: 14, rot: 0, ...a };
+      if (an.color && !/^#[0-9a-f]{6}$/i.test(an.color)) throw new Error("color must be #rrggbb.");
+      commit(P.setAnnots(S.pages, id, [...(p.annots || []), an]), `add ${a.type}`);
+      return api.info().pages[S.pages.findIndex((q) => q.id === id)];
+    },
+    async clearAnnotations(pages) {
+      need(); const s = pages ? ids(pages) : null;
+      commit(S.pages.map((p) => (p.annots && (!s || s.has(p.id)) ? { ...p, annots: undefined } : p)), "clear annotations"); return api.info();
     },
     async clearMarks(pages) { need(); commit(P.clearMarks(S.pages, pages ? ids(pages) : null), "clear marks"); return api.info(); },
     async exportPdf({ pages, as = "blob" } = {}) {
