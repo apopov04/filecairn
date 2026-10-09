@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Enforces "nothing is uploaded": the page can only talk to its own origin. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data:; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; font-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Filecairn: free private PDF editor in your browser</title>
+<meta name="description" content="Reorder, delete, rotate, merge and split PDF pages in your browser. No ads, no account, no uploads: everything runs on your device.">
+<meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f6f8" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Filecairn">
+<meta property="og:description" content="Free, private PDF editor. No ads, no account, nothing uploaded.">
+<meta property="og:url" content="https://filecairn.silicairn.com/">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://filecairn.silicairn.com/">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/app.css">
+<link rel="modulepreload" href="js/main.js">
+</head>
+<body>
+<div id="app" class="empty">
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Filecairn home"><img src="icons/icon.svg" alt="" width="22" height="22"><span>Filecairn</span></a>
+    <input class="doc-name needs-doc" id="doc-name" aria-label="File name" spellcheck="false" autocomplete="off">
+    <div class="top-actions">
+      <button class="icon needs-doc" id="btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled></button>
+      <button class="icon needs-doc" id="btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled></button>
+      <button class="needs-doc" id="btn-add" title="Add files (Ctrl+O)"><span class="lbl">Add files</span></button>
+      <button class="primary needs-doc" id="btn-save" title="Save PDF (Ctrl+S)"><span class="lbl">Save</span></button>
+    </div>
+  </header>
+
+  <nav class="actions needs-doc" id="actions" aria-label="Page actions"></nav>
+
+  <main class="main" id="main">
+    <section class="welcome" id="welcome">
+      <div class="drop">
+        <img src="icons/icon.svg" alt="" width="56" height="56">
+        <h1>Edit PDFs, <em>privately</em>.</h1>
+        <p>Free, no ads, no account. Your files never leave this device.</p>
+        <div class="row-center"><button class="primary big" id="btn-open">Choose PDFs</button></div>
+        <p class="hint">or drop files here: PDFs, JPG, PNG and WebP</p>
+      </div>
+      <p class="foot">Open source · <a href="https://github.com/apopov04/filecairn">GitHub</a> · Works offline once loaded · Part of <a href="https://silicairn.com/projects">Silicairn</a>, with <a href="https://photocairn.silicairn.com/">Photocairn</a></p>
+    </section>
+    <div class="grid needs-doc" id="grid" role="listbox" aria-label="Pages" aria-multiselectable="true" tabindex="0"></div>
+    <div class="dropzone" id="dropzone" hidden><div>Drop to add pages</div></div>
+  </main>
+
+  <footer class="statusbar needs-doc">
+    <span id="status" aria-live="polite"></span>
+    <label class="size"><span class="sr-only">Thumbnail size</span><input type="range" id="thumb-size" min="100" max="300" step="10" value="170" aria-label="Thumbnail size"></label>
+  </footer>
+</div>
+
+<dialog id="split-dialog" aria-labelledby="split-title">
+  <form method="dialog" class="dlg">
+    <h2 id="split-title">Split PDF</h2>
+    <label class="radio"><input type="radio" name="mode" value="every" checked> Every <input type="number" id="split-every" min="1" value="1" inputmode="numeric" aria-label="Pages per file"> page(s) per file</label>
+    <label class="radio"><input type="radio" name="mode" value="ranges"> Ranges <input type="text" id="split-ranges" placeholder="e.g. 1-3, 4-8, 9-" aria-label="Page ranges"></label>
+    <p class="hint">Each part becomes its own PDF, downloaded together as a ZIP.</p>
+    <p class="err" id="split-err" role="alert"></p>
+    <div class="row-end"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="split-go" value="go">Split</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="file-input" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp" multiple hidden>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
