@@ -137,6 +137,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 }
 
 .rpagebox canvas.rover { position: absolute; inset: 0; }
+.rpagebox canvas.rhl { mix-blend-mode: multiply; pointer-events: none; }
 .rpagebox[data-tool=select] { cursor: default; }
 .rpagebox[data-tool=text] { cursor: text; }
 .rpagebox[data-tool=note] { cursor: copy; }

@@ -44,6 +44,18 @@ await page.keyboard.press("h");
 await dragUser(55, 112, 300, 140);
 let a = await annotsOf(2);
 check("highlight over text makes a highlight", a.length === 1 && a[0].type === "highlight", a);
+// What you see in the editor: the text under the highlight must stay dark and readable.
+await sleep(200);
+const [hx1, hy1] = await at(60, 132), [hx2, hy2] = await at(200, 116);
+const clip = await page.screenshot({ encoding: "base64", clip: { x: hx1, y: hy1, width: hx2 - hx1, height: hy2 - hy1 } });
+const px = await page.evaluate(async (b64) => {
+  const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode();
+  const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height).data; let dark = 0, yellow = 0;
+  for (let i = 0; i < d.length; i += 4) { const [r, gg, b] = [d[i], d[i + 1], d[i + 2]]; if (r + gg + b < 200) dark++; if (r > 200 && gg > 170 && b < 90) yellow++; }
+  return { dark, yellow, total: d.length / 4 };
+}, clip);
+check("in the editor the highlighted text stays dark (not covered)", px.dark > px.total * 0.03 && px.yellow > px.total * 0.3, px);
 await page.keyboard.press("u"); await dragUser(55, 112, 140, 140);
 await page.keyboard.press("p"); await dragUser(100, 300, 300, 400, 12);
 await page.keyboard.press("a"); await dragUser(400, 500, 300, 420);

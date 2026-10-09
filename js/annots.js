@@ -96,13 +96,14 @@ export const cssFont = (a, px) => `${a.italic ? "italic " : ""}${a.bold ? "bold 
  * Draw annotations on a 2D context whose page was rendered with pdf.js
  * viewport `vp` (device pixels). selected: index to outline, or -1.
  */
-export function drawAnnots(ctx, vp, annots, selected = -1) {
+export function drawAnnots(ctx, vp, annots, selected = -1, skip = null) {
   if (!annots?.length) return;
   const [a, b, c, d, e, f] = vp.transform, k = Math.hypot(a, b); // device px per point
   const P = (x, y) => [a * x + c * y + e, b * x + d * y + f];
   const box = (r) => { const [x1, y1] = P(r[0], r[1]), [x2, y2] = P(r[2], r[3]); return [Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)]; };
   ctx.save();
   annots.forEach((an, i) => {
+    if (skip?.(an)) { if (i === selected) outline(an); return; }
     ctx.save();
     ctx.lineCap = ctx.lineJoin = "round";
     ctx.strokeStyle = ctx.fillStyle = an.color || "#000";
@@ -152,10 +153,11 @@ export function drawAnnots(ctx, vp, annots, selected = -1) {
       }
     }
     ctx.restore();
-    if (i === selected) {
-      const [x, y, w, h] = box(bbox(an));
-      ctx.save(); ctx.strokeStyle = "#0F5468"; ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeRect(x - 4, y - 4, w + 8, h + 8); ctx.restore();
-    }
+    if (i === selected) outline(an);
   });
+  function outline(an) {
+    const [x, y, w, h] = box(bbox(an));
+    ctx.save(); ctx.strokeStyle = "#0F5468"; ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeRect(x - 4, y - 4, w + 8, h + 8); ctx.restore();
+  }
   ctx.restore();
 }

@@ -35,7 +35,7 @@ export function createPageView(ctx) {
     font: saved.font || "sans", bold: !!saved.bold, italic: !!saved.italic,
   };
   const save = () => localStorage.setItem("fc-tools", JSON.stringify(opt));
-  let id = null, base = null, over = null, sel = null, drag = null, editor = null, renderToken = 0;
+  let id = null, base = null, over = null, hl = null, sel = null, drag = null, editor = null, renderToken = 0;
   let zoom = 1, anchor = null; // zoom relative to "fit"; anchor keeps a point under the cursor
   let live = null; // { i, a }: an annotation being restyled (slider/picker drag), not yet committed
   // sel: { kind: "annot" | "mark", i }
@@ -86,9 +86,11 @@ export function createPageView(ctx) {
       if (tok !== renderToken) return;
       c.key = key; c.style.width = `${fit}px`; c.className = "rbase";
       base = c;
-      over = document.createElement("canvas"); over.className = "rover";
-      over.width = c.width; over.height = c.height; over.style.width = c.style.width;
-      box.replaceChildren(base, over);
+      // Highlights get their own layer, blended (multiply) with the page under
+      // it so text stays visible, like a real highlighter. Everything else is on top.
+      const layer = (cls) => { const l = document.createElement("canvas"); l.className = cls; l.width = c.width; l.height = c.height; l.style.width = c.style.width; return l; };
+      hl = layer("rover rhl"); over = layer("rover");
+      box.replaceChildren(base, hl, over);
       if (editor) box.append(editor.el);
       $(".zlabel").textContent = `${Math.round(zoom * 100)}%`;
       if (anchor) { // keep the document point under the cursor in place
@@ -122,6 +124,8 @@ export function createPageView(ctx) {
     if (!over) return;
     const g = over.getContext("2d");
     g.clearRect(0, 0, over.width, over.height);
+    const gh = hl.getContext("2d");
+    gh.clearRect(0, 0, hl.width, hl.height);
     let list = annots();
     if (live) list = list.map((a, i) => (i === live.i ? live.a : a));
     if (drag?.preview) list = drag.replace != null ? list.map((a, i) => (i === drag.replace ? drag.preview : a)) : [...list, drag.preview];
@@ -136,7 +140,9 @@ export function createPageView(ctx) {
     });
     if (drag?.markRect) { const [x, y, w, h] = rectToViewport(vp, drag.markRect); g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(x, y, w, h); g.strokeStyle = "#ff2d55"; g.setLineDash([6, 4]); g.strokeRect(x, y, w, h); g.setLineDash([]); }
     if (drag?.selRect) { const [x, y, w, h] = rectToViewport(vp, drag.selRect); g.strokeStyle = "#0F5468"; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(x, y, w, h); g.setLineDash([]); }
-    drawAnnots(g, vp, list.filter((a) => !(editor && a === editor.annot)), sel?.kind === "annot" ? sel.i : -1);
+    const shown = list.filter((a) => !(editor && a === editor.annot)), isHl = (a) => a.type === "highlight";
+    drawAnnots(gh, vp, shown, -1, (a) => !isHl(a));
+    drawAnnots(g, vp, shown, sel?.kind === "annot" ? sel.i : -1, isHl);
   }
 
   /* ---------------------------------- panel --------------------------------- */
