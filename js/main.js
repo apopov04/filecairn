@@ -6,6 +6,7 @@ import { loadFile, renderPage, buildPdf } from "./engine.js";
 import { zip } from "./zip.js";
 import { ph } from "./icons.js";
 import { installApi } from "./api.js";
+import { createRedactView } from "./redactview.js";
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app"), grid = $("#grid"), main = $("#main");
@@ -19,6 +20,7 @@ const S = {
   anchor: null, // last clicked id, for Shift+click ranges
   undo: [], redo: [],
   name: "document",
+  dpi: +(localStorage.getItem("fc-dpi") || 200), // resolution of redacted (flattened) pages
 };
 
 function commit(pages, label) {
@@ -28,14 +30,15 @@ function commit(pages, label) {
   S.pages = pages;
   for (const id of [...S.sel]) if (!pages.some((p) => p.id === id)) S.sel.delete(id);
   render();
+  rview?.refresh();
 }
 function undo() {
   const u = S.undo.pop(); if (!u) return;
-  S.redo.push({ pages: S.pages, label: u.label }); S.pages = u.pages; render(); toast(`Undid ${u.label}`);
+  S.redo.push({ pages: S.pages, label: u.label }); S.pages = u.pages; render(); rview?.refresh(); toast(`Undid ${u.label}`);
 }
 function redo() {
   const r = S.redo.pop(); if (!r) return;
-  S.undo.push({ pages: S.pages, label: r.label }); S.pages = r.pages; render(); toast(`Redid ${r.label}`);
+  S.undo.push({ pages: S.pages, label: r.label }); S.pages = r.pages; render(); rview?.refresh(); toast(`Redid ${r.label}`);
 }
 
 /* ---------------------------------- opening --------------------------------- */
@@ -114,11 +117,11 @@ function pump() {
   while (rendering < 3 && queue.length) {
     const card = queue.shift(), p = card._page;
     if (!card.isConnected || p.blank) continue;
-    const key = `${p.src}:${p.index}:${p.rot}:${thumbW}`;
+    const key = `${p.src}:${p.index}:${p.rot}:${thumbW}:${JSON.stringify(p.marks || [])}`;
     const box = card.querySelector(".page");
     if (thumbs.has(key)) { box.replaceChildren(thumbs.get(key)); continue; }
     rendering++;
-    renderPage(S.sources[p.src], p.index, p.rot, thumbW)
+    renderPage(S.sources[p.src], p.index, p.rot, thumbW, p.marks)
       .then((c) => { thumbs.set(key, c); if (card._page === p) box.replaceChildren(c); })
       .catch(() => { box.textContent = "Can't show"; })
       .finally(() => { rendering--; pump(); });
@@ -137,7 +140,7 @@ function makeCard(p) {
 
 function render() {
   app.classList.toggle("empty", !S.pages.length);
-  const frag = document.createDocumentFragment();
+  const frag = { children: [] }; // the cards, in page order
   S.pages.forEach((p, i) => {
     let el = cards.get(p.id);
     if (!el) { el = makeCard(p); cards.set(p.id, el); }
@@ -147,14 +150,18 @@ function render() {
     el.querySelector(".page").style.setProperty("--par", (s.w / s.h).toFixed(4));
     el.querySelector(".thumb").style.setProperty("--ar", Math.min(1.4, Math.max(.6, s.w / s.h)).toFixed(4));
     el.querySelector(".page").classList.toggle("blank", !!p.blank);
+    el.classList.toggle("has-marks", !!p.marks?.length);
     el.querySelector(".num").textContent = i + 1;
     const selected = S.sel.has(p.id);
     el.setAttribute("aria-selected", String(selected));
-    el.setAttribute("aria-label", `Page ${i + 1}${p.blank ? ", blank" : ""}${p.rot ? `, rotated ${p.rot}°` : ""}`);
+    el.setAttribute("aria-label", `Page ${i + 1}${p.blank ? ", blank" : ""}${p.rot ? `, rotated ${p.rot}°` : ""}${p.marks?.length ? `, ${p.marks.length} redaction${p.marks.length === 1 ? "" : "s"}` : ""}`);
     if (stale) { if (!p.blank) { el.querySelector(".page").replaceChildren(); io.observe(el); } else el.querySelector(".page").replaceChildren(); }
-    frag.append(el);
+    frag.children.push(el);
   });
-  grid.replaceChildren(frag);
+  // Only re-insert cards when the order changed: moving nodes would cancel
+  // double-clicks and reset focus.
+  const want = [...frag.children], have = [...grid.children];
+  if (want.length !== have.length || want.some((el, i) => el !== have[i])) grid.replaceChildren(...want);
   for (const id of [...cards.keys()]) if (!S.pages.some((p) => p.id === id)) cards.delete(id);
   renderActions();
   $("#btn-undo").disabled = !S.undo.length; $("#btn-redo").disabled = !S.redo.length;
@@ -186,9 +193,10 @@ const ACTIONS = {
   extract: async () => {
     if (!needSel("extract")) return;
     const pages = S.pages.filter((p) => S.sel.has(p.id));
-    await download(await busy("Extracting", () => buildPdf(S.sources, pages)), `${docName()}-pages.pdf`, "application/pdf");
+    await download(await busy("Extracting", () => buildPdf(S.sources, pages, { dpi: S.dpi })), `${docName()}-pages.pdf`, "application/pdf");
   },
   split: () => openSplit(),
+  redact: () => rview.open(S.pages.find((p) => S.sel.has(p.id))?.id),
   save: () => save(),
 };
 
@@ -199,7 +207,7 @@ function renderActions() {
     el.className = cls; el.title = title; el.setAttribute("aria-label", label);
     el.innerHTML = `${ph(icon)}<span class="lbl">${label}</span>`;
     el.onclick = ACTIONS[key]; el.dataset.key = key;
-    if (!n && !["all", "none", "blank", "split"].includes(key)) el.disabled = true;
+    if (!n && !["all", "none", "blank", "split", "redact"].includes(key)) el.disabled = true;
     return el;
   };
   const sep = () => Object.assign(document.createElement("span"), { className: "sep" });
@@ -216,6 +224,8 @@ function renderActions() {
     sep(),
     b("extract", "export", "Extract", "Save the selected pages as a new PDF"),
     b("split", "scissors", "Split", "Split into several PDFs"),
+    sep(),
+    b("redact", "eye-slash", "Redact", "Black out text and areas for good (double-click a page)"),
   ];
   $("#actions").replaceChildren(...els);
 }
@@ -333,7 +343,7 @@ async function download(bytes, name, type) {
 
 async function save() {
   if (!S.pages.length) return;
-  try { await download(await busy("Saving", () => buildPdf(S.sources, S.pages)), `${docName()}.pdf`, "application/pdf"); }
+  try { await download(await busy("Saving", () => buildPdf(S.sources, S.pages, { dpi: S.dpi })), `${docName()}.pdf`, "application/pdf"); }
   catch (e) { toast(`Couldn't save: ${e.message}`, 5000); }
 }
 $("#btn-save").onclick = save;
@@ -358,7 +368,7 @@ dlg.addEventListener("close", async () => {
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i];
         const label = g.length === 1 ? `p${g[0] + 1}` : `p${g[0] + 1}-${g.at(-1) + 1}`;
-        out.push({ name: `${docName()}-${String(i + 1).padStart(pad, "0")}-${label}.pdf`, data: await buildPdf(S.sources, g.map((k) => S.pages[k])) });
+        out.push({ name: `${docName()}-${String(i + 1).padStart(pad, "0")}-${label}.pdf`, data: await buildPdf(S.sources, g.map((k) => S.pages[k]), { dpi: S.dpi }) });
       }
       return out;
     });
@@ -392,8 +402,12 @@ function toast(msg, ms = 2600) {
 }
 function status(s) { $("#status").textContent = s; }
 
+// Double-click a page to redact it.
+grid.addEventListener("dblclick", (e) => { const c = cardOf(e.target); if (c) rview.open(+c.dataset.id); });
+
 addEventListener("keydown", (e) => {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (rview.isOpen && !mod && rview.keydown(e)) { e.preventDefault(); return; }
   if (mod && k === "o") { e.preventDefault(); return pick(S.pages.length ? insertPos() : null); }
   if (e.target.closest?.("input, textarea, dialog")) return;
   if (!S.pages.length) return;
@@ -402,6 +416,7 @@ addEventListener("keydown", (e) => {
   if (mod && k === "s") { e.preventDefault(); return save(); }
   if (mod && k === "a") { e.preventDefault(); return ACTIONS.all(); }
   if (mod && k === "d") { e.preventDefault(); return ACTIONS.duplicate(); }
+  if (rview.isOpen && !(mod && ["z", "y", "s"].includes(k))) return;
   if (e.key === "Escape") return ACTIONS.none();
   if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); return ACTIONS.remove(); }
   if (!mod && k === "r") return e.shiftKey ? ACTIONS.rotateL() : ACTIONS.rotateR();
@@ -411,5 +426,6 @@ addEventListener("beforeunload", (e) => { if (S.undo.length) e.preventDefault();
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 
-installApi({ S, addFiles, commit, render, buildPdf, actions: ACTIONS, undo, redo, docName });
+const rview = createRedactView({ S, commit, toast, root: main, onToggle: (open) => { app.classList.toggle("redacting", open); if (!open) render(); } });
+installApi({ S, addFiles, commit, render, buildPdf: (src, pages) => buildPdf(src, pages, { dpi: S.dpi }), actions: ACTIONS, undo, redo, docName, rview });
 render();

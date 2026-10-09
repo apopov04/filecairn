@@ -53,3 +53,15 @@ test("zip writes a valid stored archive", () => {
   assert.equal(v.getUint32(end, true), 0x06054b50);
   assert.equal(v.getUint16(end + 10, true), 2);
 });
+
+test("marks: set, add, clear, and duplicates keep them", () => {
+  const d = doc(2);
+  let r = P.setMarks(d, 100, [[0, 0, 10, 10]]);
+  assert.equal(r[0].marks.length, 1);
+  r = P.addMarks(r, new Map([[100, [[1, 1, 2, 2]]], [101, [[3, 3, 4, 4]]]]));
+  assert.deepEqual([r[0].marks.length, r[1].marks.length], [2, 1]);
+  assert.equal(P.duplicate(r, new Set([100])).pages[1].marks.length, 2);
+  assert.equal(P.setMarks(r, 100, [])[0].marks, undefined);
+  assert.ok(P.clearMarks(r).every((p) => !p.marks));
+  assert.equal(P.clearMarks(r, new Set([101]))[0].marks.length, 2);
+});

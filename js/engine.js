@@ -60,8 +60,41 @@ export async function loadFile(file, name = file.name || "document.pdf") {
   return { name, bytes, pdf, pages };
 }
 
-/** Render a page to a canvas about `width` CSS pixels wide, with extra rotation `rot`. */
-export async function renderPage(src, index, rot, width) {
+// Map between PDF user space and a pdf.js viewport's pixels using its transform matrix.
+export function toViewport(vp, x, y) { const [a, b, c, d, e, f] = vp.transform; return [a * x + c * y + e, b * x + d * y + f]; }
+export function toUserSpace(vp, px, py) {
+  const [a, b, c, d, e, f] = vp.transform, det = a * d - b * c;
+  return [(d * (px - e) - c * (py - f)) / det, (-b * (px - e) + a * (py - f)) / det];
+}
+/** A user-space rect [x1, y1, x2, y2] as a viewport pixel box [x, y, w, h]. */
+export function rectToViewport(vp, [x1, y1, x2, y2]) {
+  const [a, b] = toViewport(vp, x1, y1), [c, d] = toViewport(vp, x2, y2);
+  return [Math.min(a, c), Math.min(b, d), Math.abs(c - a), Math.abs(d - b)];
+}
+
+/** Draw redaction marks (user-space rects) onto a rendered page. */
+function burnMarks(ctx, vp, marks) {
+  if (!marks?.length) return;
+  ctx.fillStyle = "#000";
+  for (const m of marks) {
+    const [x, y, w, h] = rectToViewport(vp, m);
+    ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(w) + 1, Math.ceil(h) + 1);
+  }
+}
+
+/** The page's text items (pdf.js getTextContent), cached per source page. */
+export async function textItems(src, index) {
+  src.text ??= new Map();
+  if (!src.text.has(index)) src.text.set(index, (await (await src.pdf.getPage(index + 1)).getTextContent()).items);
+  return src.text.get(index);
+}
+
+/**
+ * Render a page to a canvas about `width` CSS pixels wide, with extra rotation
+ * `rot`, and redaction marks drawn as black boxes. canvas.viewport is the
+ * pdf.js viewport (device pixels), for mapping between screen and user space.
+ */
+export async function renderPage(src, index, rot, width, marks = null) {
   const page = await src.pdf.getPage(index + 1);
   const rotation = norm((page.rotate || 0) + rot);
   const base = page.getViewport({ scale: 1, rotation });
@@ -72,6 +105,8 @@ export async function renderPage(src, index, rot, width) {
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
+  burnMarks(ctx, vp, marks);
+  canvas.viewport = vp;
   return canvas;
 }
 
@@ -79,7 +114,7 @@ export async function renderPage(src, index, rot, width) {
  * Build a PDF from the page list. sources[src] are loadFile() results.
  * Source metadata (author, software, dates) isn't carried over.
  */
-export async function buildPdf(sources, pages) {
+export async function buildPdf(sources, pages, { dpi = 200 } = {}) {
   const out = await PDFDocument.create();
   const libs = new Map(), copied = new Map();
   // Copy each source's pages in one go (faster than one at a time).
@@ -94,6 +129,7 @@ export async function buildPdf(sources, pages) {
       if (p.rot) page.setRotation(degrees(p.rot));
       continue;
     }
+    if (p.marks?.length) { await addRedacted(out, sources[p.src], p, dpi); continue; }
     const page = out.addPage(copied.get(p.id));
     if (p.rot) page.setRotation(degrees(norm(page.getRotation().angle + p.rot)));
   }
@@ -101,8 +137,34 @@ export async function buildPdf(sources, pages) {
   return out.save({ useObjectStreams: true });
 }
 
+/**
+ * Redaction: the page is rendered to an image with the marks burned in and
+ * replaces the original, so the text, images, links and form fields under the
+ * marks are gone from the file, not just covered.
+ */
+async function addRedacted(out, src, p, dpi) {
+  const page = await src.pdf.getPage(p.index + 1);
+  const base = page.getViewport({ scale: 1, rotation: 0 });
+  // Stay under ~25 megapixels so large pages don't exhaust memory.
+  const scale = Math.min(dpi / 72, Math.sqrt(25e6 / (base.width * base.height)));
+  const vp = page.getViewport({ scale, rotation: 0 });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
+  burnMarks(ctx, vp, p.marks);
+  const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+  canvas.width = canvas.height = 0; // free the memory now
+  const img = await out.embedJpg(new Uint8Array(await blob.arrayBuffer()));
+  const np = out.addPage([base.width, base.height]);
+  np.drawImage(img, { x: 0, y: 0, width: base.width, height: base.height });
+  const rot = norm((page.rotate || 0) + p.rot);
+  if (rot) np.setRotation(degrees(rot));
+}
+
 function groupBySource(pages) {
   const m = new Map();
-  for (const p of pages) if (!p.blank) { if (!m.has(p.src)) m.set(p.src, []); m.get(p.src).push(p); }
+  for (const p of pages) if (!p.blank && !p.marks?.length) { if (!m.has(p.src)) m.set(p.src, []); m.get(p.src).push(p); }
   return m;
 }

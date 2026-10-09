@@ -74,3 +74,12 @@ export function chunks(n, every) {
   for (let i = 0; i < n; i += k) out.push(Array.from({ length: Math.min(k, n - i) }, (_, j) => i + j));
   return out;
 }
+
+/** Replace one page's redaction marks. */
+export const setMarks = (pages, id, marks) => pages.map((p) => (p.id === id ? { ...p, marks: marks.length ? marks : undefined } : p));
+
+/** Add marks to several pages: byId is a Map(id -> [rects]). */
+export const addMarks = (pages, byId) => pages.map((p) => (byId.has(p.id) ? { ...p, marks: [...(p.marks || []), ...byId.get(p.id)] } : p));
+
+/** Remove all marks from the pages with these ids (all pages if ids is null). */
+export const clearMarks = (pages, ids = null) => pages.map((p) => (p.marks && (!ids || ids.has(p.id)) ? { ...p, marks: undefined } : p));

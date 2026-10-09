@@ -4,6 +4,8 @@
 // readable errors. Nothing is fetched or downloaded unless you ask for it.
 
 import * as P from "./pages.js";
+import { textItems } from "./engine.js";
+import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
 
 const METHODS = [
   ["open(files)", "Open PDFs/images (File, Blob or data: URL, or an array of them), replacing nothing: pages are added at the end."],
@@ -14,6 +16,9 @@ const METHODS = [
   ["duplicatePages(pages)", "Insert a copy after each page."],
   ["insertBlank(before, { width, height })", "Insert a blank page before page `before` (size in points; default: A4)."],
   ["select(pages)", "Select pages in the UI (empty array clears)."],
+  ["markText(query | { preset })", "Mark every match of plain text (case-insensitive) or a preset (\"email\", \"phone\", \"number\", \"iban\") for redaction. Returns { matches, pages }."],
+  ["markArea(page, [x1, y1, x2, y2])", "Mark a rectangle for redaction, in PDF points from the page's bottom-left (as in the original page, before any rotation)."],
+  ["clearMarks(pages?)", "Remove redaction marks (all pages if omitted)."],
   ["exportPdf({ pages, as })", "Build the PDF (optionally only some pages). as: \"blob\" (default), \"bytes\" or \"dataurl\". Doesn't download."],
   ["save()", "Download the whole PDF, like the Save button."],
   ["undo() / redo()", "Undo or redo the last change."],
@@ -35,7 +40,7 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     throw new Error("open() takes File/Blob objects or data: URLs. (Fetching other websites is blocked by Filecairn's privacy policy.)");
   };
   const api = {
-    version: "0.1.0", apiVersion: 1,
+    version: "0.2.0", apiVersion: 1,
     help: () => METHODS.map(([sig, desc]) => ({ sig, desc })),
     async open(files) {
       const list = await Promise.all((Array.isArray(files) ? files : [files]).map(toFile));
@@ -46,7 +51,7 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     info() {
       return {
         name: S.name, pageCount: S.pages.length,
-        pages: S.pages.map((p, i) => ({ page: i + 1, blank: !!p.blank, rotation: p.rot, width: Math.round(p.w), height: Math.round(p.h), source: p.blank ? null : S.sources[p.src].name })),
+        pages: S.pages.map((p, i) => ({ page: i + 1, blank: !!p.blank, rotation: p.rot, redactions: p.marks?.length || 0, width: Math.round(p.w), height: Math.round(p.h), source: p.blank ? null : S.sources[p.src].name })),
         selected: S.pages.map((p, i) => (S.sel.has(p.id) ? i + 1 : 0)).filter(Boolean),
         canUndo: S.undo.length > 0, canRedo: S.redo.length > 0,
       };
@@ -57,6 +62,27 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     async duplicatePages(pages) { need(); commit(P.duplicate(S.pages, ids(pages)).pages, "duplicate"); return api.info(); },
     async insertBlank(before = S.pages.length + 1, { width = 595.28, height = 841.89 } = {}) { need(); commit(P.insertBlank(S.pages, before - 1, width, height).pages, "insert blank page"); return api.info(); },
     async select(pages = []) { need(); S.sel = pages.length ? ids(pages) : new Set(); render(); return api.info().selected; },
+    async markText(query) {
+      need();
+      const re = typeof query === "string" ? textQuery(query) : PRESETS[query?.preset]?.re;
+      if (!re) throw new Error(`markText needs text or { preset: ${Object.keys(PRESETS).map((k) => `"${k}"`).join(" | ")} }.`);
+      const byId = new Map(); let matches = 0;
+      for (const p of S.pages) {
+        if (p.blank) continue;
+        const m = findOnPage(await textItems(S.sources[p.src], p.index), re);
+        if (m.length) { byId.set(p.id, m.flatMap((x) => x.boxes)); matches += m.length; }
+      }
+      if (matches) commit(P.addMarks(S.pages, byId), `mark ${matches} matches`);
+      return { matches, pages: S.pages.map((p, i) => (byId.has(p.id) ? i + 1 : 0)).filter(Boolean) };
+    },
+    async markArea(page, rect) {
+      need(); const id = [...ids([page], "page")][0], p = S.pages.find((q) => q.id === id);
+      if (p.blank) throw new Error("Blank pages have nothing to redact.");
+      if (!Array.isArray(rect) || rect.length !== 4 || rect.some((v) => typeof v !== "number")) throw new Error("rect must be [x1, y1, x2, y2] in PDF points.");
+      commit(P.setMarks(S.pages, id, [...(p.marks || []), normRect(rect)]), "mark area");
+      return api.info();
+    },
+    async clearMarks(pages) { need(); commit(P.clearMarks(S.pages, pages ? ids(pages) : null), "clear marks"); return api.info(); },
     async exportPdf({ pages, as = "blob" } = {}) {
       need();
       const list = pages ? [...ids(pages)].map((id) => S.pages.find((p) => p.id === id)) : S.pages;

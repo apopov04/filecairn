@@ -2,12 +2,13 @@
 
 > Filecairn is a free, private PDF editor that runs entirely in the browser at https://filecairn.silicairn.com. No account, no ads, and files are never uploaded: everything happens on the user's device. Part of the Silicairn suite, alongside Photocairn (https://photocairn.silicairn.com). Open source (MIT): https://github.com/apopov04/filecairn
 
-## What it does (v0.1)
+## What it does (v0.2)
 - Open PDFs, JPG, PNG and WebP (images become pages). Open several files to merge them.
 - Reorder pages by dragging, rotate, duplicate, delete, insert blank pages.
 - Extract selected pages to a new PDF; split into parts (every N pages or ranges like 1-3, 4-8), downloaded as a ZIP.
+- Redact for real: double-click a page (or the Redact button) to drag boxes, or search text / presets (emails, phone numbers, long numbers, IBANs) and mark all matches. On save, marked pages are flattened to images with the boxes burned in, so nothing underneath remains in the file; their text can't be selected afterwards.
 - Save the result. Source metadata (author, software, dates) isn't carried over.
-- Works offline once loaded. Coming next: redaction, annotations/highlights, fill & sign, adding text.
+- Works offline once loaded. Coming next: annotations/highlights, fill & sign, adding text.
 
 ## Keyboard
 Click a page to select (Ctrl/Cmd+click adds, Shift+click selects a range). Ctrl+A select all, Esc select none, Delete removes, R rotates right (Shift+R left), Ctrl+D duplicates, Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+S save, Ctrl+O add files.
@@ -17,5 +18,6 @@ Drive it from the page with `window.filecairn` (call `filecairn.help()` for the 
 - `await filecairn.open(fileOrBlobOrDataUrl)` (arrays allowed; fetching other sites is blocked by the page's security policy, so pass a Blob or data: URL)
 - `filecairn.info()` page count, sizes, rotations, selection
 - `await filecairn.movePages([3, 4], 1)`, `deletePages([2])`, `rotatePages([1], 90)`, `duplicatePages([1])`, `insertBlank(2)`
+- Redaction: `await filecairn.markText("John Smith")` or `markText({ preset: "email" })` (also phone, number, iban); `markArea(page, [x1, y1, x2, y2])` in PDF points from the page's bottom-left; `clearMarks()`. Marks are burned in by exportPdf/save.
 - `await filecairn.exportPdf({ pages: [1, 2], as: "dataurl" })` returns the PDF without downloading; `save()` downloads it.
 Privacy: editing runs locally, but whatever AI is driving the browser can see the document.

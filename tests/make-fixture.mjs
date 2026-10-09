@@ -10,6 +10,9 @@ for (let i = 0; i < 5; i++) {
   page.drawRectangle({ x: 40, y: 40, width: width - 80, height: height - 80, borderColor: colors[i], borderWidth: 6 });
   page.drawText(String(i + 1), { x: width / 2 - 60, y: height / 2 - 60, size: 180, font, color: colors[i] });
   page.drawText(`Page ${i + 1}`, { x: 60, y: height - 100, size: 28, font });
+  const body = await doc.embedFont(StandardFonts.Helvetica);
+  if (i === 1) page.drawText("Contact: jane.doe@example.com, phone +31 6 1234 5678", { x: 60, y: 120, size: 14, font: body });
+  if (i === 3) page.drawText("Account NL91 ABNA 0417 1643 00 for John Smith", { x: 60, y: 120, size: 14, font: body });
   if (i === 4) page.setRotation(degrees(90));
 }
 doc.setAuthor("Secret Author"); doc.setProducer("Fixture");
