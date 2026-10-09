@@ -52,7 +52,7 @@ const px = await page.evaluate(async (b64) => {
   const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode();
   const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const g = c.getContext("2d"); g.drawImage(img, 0, 0);
   const d = g.getImageData(0, 0, c.width, c.height).data; let dark = 0, yellow = 0;
-  for (let i = 0; i < d.length; i += 4) { const [r, gg, b] = [d[i], d[i + 1], d[i + 2]]; if (r + gg + b < 200) dark++; if (r > 200 && gg > 170 && b < 90) yellow++; }
+  for (let i = 0; i < d.length; i += 4) { const [r, gg, b] = [d[i], d[i + 1], d[i + 2]]; if (0.299 * r + 0.587 * gg + 0.114 * b < 150) dark++; if (r > 200 && gg > 170 && b < 90) yellow++; }
   return { dark, yellow, total: d.length / 4 };
 }, clip);
 check("in the editor the highlighted text stays dark (not covered)", px.dark > px.total * 0.03 && px.yellow > px.total * 0.3, px);
@@ -87,6 +87,29 @@ await page.keyboard.press("Delete");
 check("Delete removes it", (await annotsOf(2)).length === 6, null);
 await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
 check("Ctrl+Z brings it back", (await annotsOf(2)).length === 7, null);
+// History panel: rows for every step, click to jump back and forward.
+const rows = () => page.evaluate(() => [...document.querySelectorAll(".history .hrow")].map((b) => `${b.querySelector(".hlabel").textContent}:${b.className.split(" ")[1]}`));
+let hr = await rows();
+check("history lists each step, current marked, undone step dimmed", hr[0] === "Open:past" && hr.at(-2) === "Move annotation:current" && hr.at(-1) === "Delete annotation:future" && hr.length === 10, hr);
+const clickRow = (i) => page.evaluate((i) => document.querySelectorAll(".history .hrow")[i].click(), i);
+await clickRow(5); await sleep(200);
+check("clicking an earlier step goes back (5 annotations)", (await annotsOf(2)).length === 5, (await annotsOf(2)).length);
+await clickRow(8); await sleep(200);
+check("clicking a later step goes forward again (7)", (await annotsOf(2)).length === 7 && (await rows()).at(-1) === "Delete annotation:future", await rows());
+// Drag the divider between the tool panel and History.
+const dock = () => page.evaluate(() => document.querySelector(".history-dock")?.getBoundingClientRect().height || 0);
+if (W >= 700) {
+  const h0 = await dock(), sp = await page.evaluate(() => { const r = document.querySelector(".rside .split").getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+  await page.mouse.move(...sp); await page.mouse.down(); await page.mouse.move(sp[0], sp[1] - 120, { steps: 6 }); await page.mouse.up();
+  const h1 = await dock();
+  check("dragging the divider makes History taller", h1 > h0 + 100, { h0, h1 });
+  await shot("A0-layout");
+} else {
+  await page.evaluate(() => document.querySelector('.rside-tabs [data-tab=history]').click());
+  check("phone: History tab shows the list", await page.evaluate(() => document.querySelector(".history-dock").offsetHeight > 50 && document.querySelector(".rpanel").offsetHeight === 0), null);
+  await shot("A0-layout");
+  await page.evaluate(() => document.querySelector('.rside-tabs [data-tab=tool]').click());
+}
 
 // Restyle the selected text box: custom color, size via the number field, serif + bold.
 await page.mouse.click(...await at(70, 772)); await sleep(150); // select "Hello Filecairn"

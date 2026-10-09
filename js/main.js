@@ -32,13 +32,31 @@ function commit(pages, label) {
   render();
   rview?.refresh();
 }
-function undo() {
+function undo(quiet) {
   const u = S.undo.pop(); if (!u) return;
-  S.redo.push({ pages: S.pages, label: u.label }); S.pages = u.pages; render(); rview?.refresh(); toast(`Undid ${u.label}`);
+  S.redo.push({ pages: S.pages, label: u.label }); S.pages = u.pages;
+  if (!quiet) { render(); rview?.refresh(); toast(`Undid ${u.label}`); }
 }
-function redo() {
+function redo(quiet) {
   const r = S.redo.pop(); if (!r) return;
-  S.undo.push({ pages: S.pages, label: r.label }); S.pages = r.pages; render(); rview?.refresh(); toast(`Redid ${r.label}`);
+  S.undo.push({ pages: S.pages, label: r.label }); S.pages = r.pages;
+  if (!quiet) { render(); rview?.refresh(); toast(`Redid ${r.label}`); }
+}
+// History rows: the opened document, then each step (redo-able ones last, dimmed).
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+function steps() {
+  const now = S.undo.length;
+  return [
+    { label: "Open", sub: S.name, state: now === 0 ? "current" : "past" },
+    ...S.undo.map((u, i) => ({ label: cap(u.label), state: i === now - 1 ? "current" : "past" })),
+    ...[...S.redo].reverse().map((r) => ({ label: cap(r.label), state: "future" })),
+  ];
+}
+/** Jump to history row i (0 = as opened). */
+function goTo(i) {
+  while (S.undo.length > i) undo(true);
+  while (S.undo.length < i && S.redo.length) redo(true);
+  render(); rview?.refresh();
 }
 
 /* ---------------------------------- opening --------------------------------- */
@@ -428,6 +446,6 @@ addEventListener("beforeunload", (e) => { if (S.undo.length) e.preventDefault();
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 
-const rview = createPageView({ S, commit, toast, root: main, onToggle: (open) => { app.classList.toggle("redacting", open); if (!open) render(); } });
+const rview = createPageView({ S, commit, toast, root: main, steps, goTo, onToggle: (open) => { app.classList.toggle("redacting", open); if (!open) render(); } });
 installApi({ S, addFiles, commit, render, buildPdf: (src, pages) => buildPdf(src, pages, { dpi: S.dpi }), actions: ACTIONS, undo, redo, docName, rview });
 render();

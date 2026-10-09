@@ -111,13 +111,13 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rview { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); background: var(--bg); }
 .rbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .rpage { min-width: 100px; text-align: center; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.rbody { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; }
+.rbody { display: grid; grid-template-columns: auto minmax(0, 1fr) 300px; min-height: 0; }
 .rstage { overflow: auto; display: flex; padding: 16px; }
 .rstage > .rpagebox { margin: auto; flex: none; }
 .rpagebox { position: relative; line-height: 0; box-shadow: 0 2px 6px rgba(0,0,0,.2), 0 10px 30px rgba(0,0,0,.1); background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
 .rpagebox canvas { display: block; }
 .rpagebox.blank { width: 300px; aspect-ratio: .7071; cursor: default; }
-.rpanel { border-left: 1px solid var(--line); background: var(--surface); padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.rpanel { padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px; flex: 1 1 auto; min-height: 120px; }
 .rpanel h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .rpanel .hint, .rpanel .note, .rcount { margin: 0; color: var(--muted); font-size: 13px; }
 .rpanel .note { font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
@@ -131,19 +131,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .rfound { background: var(--surface-2); border-radius: 10px; padding: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
 .rfound p { margin: 0; }
 .card.has-marks .thumb::after { content: "Redacted"; position: absolute; top: 12px; right: 12px; background: #000; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; border-radius: 4px; }
-@media (max-width: 760px) {
-  .rbody { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .rpanel { border-left: 0; border-top: 1px solid var(--line); height: 38vh; }
-}
 
 .rpagebox canvas.rover { position: absolute; inset: 0; }
 .rpagebox canvas.rhl { mix-blend-mode: multiply; pointer-events: none; }
 .rpagebox[data-tool=select] { cursor: default; }
 .rpagebox[data-tool=text] { cursor: text; }
 .rpagebox[data-tool=note] { cursor: copy; }
-.tools { display: flex; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
-.tools .tool { padding: 6px; border-radius: 8px; }
-.tools .tool.on { background: var(--accent); color: var(--accent-ink); }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .sw { width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid var(--line); }
 .sw.on { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -153,7 +146,6 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .tbox { position: absolute; transform-origin: 0 0; line-height: 1.2; z-index: 2; }
 .tbox textarea { display: block; border: 1px dashed var(--accent); background: rgba(255,255,255,.85); color: #1d1d1f; padding: 0; margin: 0; resize: none; overflow: hidden; font-family: Helvetica, Arial, sans-serif; line-height: 1.2; min-width: 120px; outline: none; white-space: pre; }
 .tbox.note textarea { background: var(--note, #ffd400); border: 1px solid rgba(0,0,0,.25); border-radius: 6px; padding: 8px; font-size: 13px; width: 220px !important; min-height: 90px; white-space: pre-wrap; box-shadow: var(--shadow); }
-@media (max-width: 760px) { .rbar { flex-wrap: wrap; } .tools { margin-left: 0; width: 100%; } }
 
 .zoom { display: flex; align-items: center; gap: 2px; margin-left: 8px; }
 .zlabel { min-width: 52px; padding: 4px 6px; border-color: transparent; background: transparent; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -166,3 +158,50 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .sl .num input { width: 58px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; background: var(--bg); text-align: right; }
 .sl input[type=range] { width: 100%; accent-color: var(--accent); }
 @media (max-width: 760px) { .zoom { margin-left: auto; } }
+
+/* Editor: tool rail (left) and sidebar with tool options + History (right) */
+.rrail { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px; border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; scrollbar-width: thin; width: 72px; }
+.rrail .tool { flex-direction: column; gap: 2px; border: 0; background: transparent; padding: 6px 2px 5px; font-size: 10.5px; line-height: 1.15; color: var(--muted); border-radius: 9px; }
+.rrail .tool span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rrail .tool:hover { color: var(--text); }
+.rrail .tool.on { background: var(--surface-2); color: var(--accent); }
+.rrail .tool.on svg { color: var(--accent); }
+.rrail .rsep { height: 1px; background: var(--line); margin: 4px 6px; flex: none; }
+.rside { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+.rside-tabs { display: none; }
+.history-dock { flex: 0 1 auto; height: 32%; min-height: 72px; display: flex; flex-direction: column; overflow: hidden; }
+.history-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.dock-head { padding: 10px 16px 4px; }
+.dock-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.history { list-style: none; margin: 0; padding: 2px 8px 8px; flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; scrollbar-width: thin; }
+.history .hrow { width: 100%; justify-content: flex-start; gap: 8px; border: 0; background: transparent; padding: 4px 8px; border-radius: 6px; font-size: 13px; text-align: left; }
+.history .hrow.current { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.history .hrow.future { opacity: .45; }
+.history .hrow.future:hover { opacity: .75; }
+.history .hlabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history .hsub { flex: 0 1 auto; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; color: var(--muted); }
+.split { flex: none; position: relative; z-index: 2; height: 9px; margin: -4px 0; cursor: row-resize; touch-action: none; outline: none; }
+.split::before { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - .5px); height: 1px; background: var(--line); transition: background .12s; }
+.split::after { content: ""; position: absolute; left: calc(50% - 16px); top: calc(50% - 2.5px); width: 32px; height: 5px; border-radius: 3px; background: var(--muted); opacity: 0; transition: opacity .12s; }
+.split:hover::before, .split.dragging::before, .split:focus-visible::before { background: var(--accent); }
+.split:hover::after, .split.dragging::after, .split:focus-visible::after { opacity: .7; }
+@media (pointer: coarse) { .split { height: 17px; margin: -8px 0; } .split::after { opacity: .35; } }
+
+@media (max-width: 760px) {
+  .rbody { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) 38vh; }
+  .rrail { flex-direction: row; width: auto; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; padding: 4px; }
+  .rrail .tool { flex: 0 0 58px; }
+  .rrail .rsep { width: 1px; height: auto; margin: 6px 3px; }
+  .rside { border-left: 0; border-top: 1px solid var(--line); }
+  .rside-tabs { display: flex; gap: 6px; padding: 8px 12px 0; }
+  .rside-tabs button { flex: 1; padding: 6px; }
+  .rside-tabs button[aria-selected=true] { background: var(--surface-2); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .rside .split { display: none; }
+  .rbar { overflow-x: auto; scrollbar-width: none; gap: 2px; padding: 6px 8px; }
+  .rbar .lbl { display: none; }
+  .rpage { min-width: 0; padding: 0 4px; white-space: nowrap; }
+  .zoom { margin-left: auto; }
+  .rside[data-tab=tool] .history-dock, .rside[data-tab=history] .rpanel { display: none; }
+  .rside .history-dock { height: auto !important; flex: 1 1 auto; min-height: 0; }
+  .history .hrow { padding: 7px 10px; }
+}

@@ -8,6 +8,7 @@ import { renderPage, textItems, rectToViewport, toUserSpace } from "./engine.js"
 import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
 import { COLORS, drawAnnots, hit, translate, textRects, cssFont } from "./annots.js";
 import { ph } from "./icons.js";
+import { historyPanel, splitter } from "./history.js";
 
 const TOOLS = [
   { id: "select", icon: "cursor", label: "Select & move", key: "v", hint: "Click an annotation or redaction box to select it; drag to move it. Double-click text or a note to edit. Delete removes." },
@@ -49,15 +50,28 @@ export function createPageView(ctx) {
       <span class="rpage" aria-live="polite"></span>
       <button class="icon" data-a="next" title="Next page (→)" aria-label="Next page">${ph("caret-right")}</button>
       <span class="zoom"><button class="icon" data-a="zout" title="Zoom out (−)" aria-label="Zoom out">${ph("magnifying-glass-minus")}</button><button class="zlabel" data-a="zfit" title="Fit to screen (0)" aria-label="Fit to screen">100%</button><button class="icon" data-a="zin" title="Zoom in (+)" aria-label="Zoom in">${ph("magnifying-glass-plus")}</button></span>
-      <div class="tools" role="toolbar" aria-label="Tools">${TOOLS.map((t) => `<button class="icon tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}</button>`).join("")}</div>
     </div>
     <div class="rbody">
+      <nav class="rrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">${TOOLS.map((t, i) => `${i === 1 || i === 4 || i === 9 || i === 11 ? '<span class="rsep"></span>' : ""}<button class="tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}<span>${t.label.replace("Select & move", "Select").replace("Strikethrough", "Strike").replace("Sticky note", "Note")}</span></button>`).join("")}</nav>
       <div class="rstage"><div class="rpagebox"></div></div>
-      <aside class="rpanel"></aside>
+      <aside class="rside" data-tab="tool">
+        <div class="rside-tabs" role="tablist" aria-label="Sidebar"><button role="tab" data-tab="tool" aria-selected="true">Tool</button><button role="tab" data-tab="history" aria-selected="false">History</button></div>
+        <div class="rpanel"></div>
+        <div class="history-dock"></div>
+      </aside>
     </div>`;
   root.append(el);
   const $ = (s) => el.querySelector(s);
   const box = $(".rpagebox"), panel = $(".rpanel");
+  // History under the tool panel, with a drag handle between them (tabs on phones).
+  const hist = historyPanel(ctx.steps, (i) => { finishEditor(); ctx.goTo(i); });
+  $(".history-dock").append(hist.el);
+  $(".rside").insertBefore(splitter(panel, $(".history-dock")), $(".history-dock"));
+  $(".rside-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tab]"); if (!b) return;
+    $(".rside").dataset.tab = b.dataset.tab;
+    $(".rside-tabs").querySelectorAll("button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+  });
 
   const page = () => S.pages.find((p) => p.id === id);
   const pos = () => S.pages.findIndex((p) => p.id === id);
@@ -102,6 +116,7 @@ export function createPageView(ctx) {
     }
     draw();
     renderPanel();
+    hist.render();
   }
 
   // A blank page has no pdf.js viewport: make one (y flipped, like pdf.js).
