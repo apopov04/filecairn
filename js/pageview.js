@@ -9,6 +9,7 @@ import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
 import { COLORS, drawAnnots, hit, translate, textRects, cssFont, imageCorner, onImageLoad } from "./annots.js";
 import { fieldsOf } from "./forms.js";
 import { createSignature, savedSigns, saveSign } from "./sign.js";
+import { BASIC, library, allFonts, cssFamily, ensureFont, onFontLoad, canUseLocalFonts, addLocalFonts, addUploadedFont, restoreUploads } from "./fonts.js";
 import { ph } from "./icons.js";
 import { historyPanel, splitter } from "./history.js";
 
@@ -245,7 +246,7 @@ export function createPageView(ctx) {
     if (["ink", "rect", "ellipse", "line", "arrow"].includes(k)) parts.push(slider("width", "Line width", 0.5, 20, 0.5, "pt"));
     if (k === "text") {
       parts.push(slider("size", "Text size", 6, 96, 1, "pt"));
-      parts.push(`<div class="seg" role="radiogroup" aria-label="Font">${[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"]].map(([f, l]) => `<button role="radio" aria-checked="${val("font") === f}" class="${val("font") === f ? "on" : ""}" data-font="${f}" style="font-family:${f === "serif" ? "Times New Roman, serif" : f === "mono" ? "Courier New, monospace" : "inherit"}">${l}</button>`).join("")}</div>`);
+      parts.push(`<label class="fontrow"><span>Font</span><button class="fontbtn" data-a="fontpick" aria-haspopup="dialog" style="font-family:${cssFamily(val("font")).replace(/"/g, "'")}">${fontLabel(val("font"))}</button></label>`);
       parts.push(`<div class="seg"><button aria-pressed="${!!val("bold")}" class="${val("bold") ? "on" : ""}" data-toggle="bold"><b>Bold</b></button><button aria-pressed="${!!val("italic")}" class="${val("italic") ? "on" : ""}" data-toggle="italic"><i>Italic</i></button></div>`);
     }
     if (k === "sign" || (k === "image" && opt.tool === "sign")) parts.push(signPanel());
@@ -261,6 +262,77 @@ export function createPageView(ctx) {
     const q = panel.querySelector("#r-q"); if (q && lastQuery) q.value = lastQuery;
     const dpi = panel.querySelector("#r-dpi"); if (dpi) dpi.value = String(S.dpi);
   }
+
+  /* ---------------------------------- fonts --------------------------------- */
+
+  // Font picker: built-in basics, the bundled library (grouped), fonts on this
+  // computer and uploaded files, with search. Fonts download only when used.
+  let fontList = [];
+  const refreshFonts = async () => { await restoreUploads(); fontList = await allFonts(); };
+  refreshFonts().then(() => renderPanel());
+  onFontLoad(() => { draw(); if (editor) styleEditor(); });
+  const fontLabel = (id) => (!id || id in BASIC ? BASIC[id || "sans"].name : fontList.find((f) => f.id === id)?.name || String(id).replace(/^(local|upload):/, ""));
+  const GROUPS = [["basic", "Built in (no download)"], ["alias", "Like Microsoft & Apple fonts"], ["sans", "Sans serif"], ["serif", "Serif"], ["mono", "Monospace"], ["display", "Display"], ["script", "Handwriting"], ["local", "On this computer"], ["upload", "Uploaded"]];
+  const fpop = document.createElement("div"); fpop.className = "fpop"; fpop.hidden = true; fpop.setAttribute("role", "dialog"); fpop.setAttribute("aria-label", "Choose a font");
+  el.append(fpop);
+  const upInput = Object.assign(document.createElement("input"), { type: "file", accept: ".ttf,.otf,font/ttf,font/otf", multiple: true, hidden: true });
+  el.append(upInput);
+  function openFonts(anchor) {
+    const cur = val("font") || "sans";
+    const items = [
+      ...Object.entries(BASIC).map(([id, b]) => ({ id, name: b.name, group: "basic" })),
+      ...fontList.map((f) => ({ id: f.id, name: f.name, group: f.alias ? "alias" : f.category, alias: f.alias })),
+    ];
+    const render = (q = "") => {
+      const ql = q.trim().toLowerCase();
+      const match = (it) => !ql || it.name.toLowerCase().includes(ql) || (it.alias || "").toLowerCase().includes(ql);
+      fpop.querySelector(".flist").innerHTML = GROUPS.map(([g, label]) => {
+        const list = items.filter((it) => it.group === g && match(it));
+        return list.length ? `<div class="fgroup">${label}</div>` + list.map((it) => `<button class="fitem${it.id === cur ? " on" : ""}" data-font-id="${it.id.replace(/"/g, "&quot;")}" ${it.group === "basic" ? `style="font-family:${BASIC[it.id].css.replace(/"/g, "'")}"` : ""}><span>${it.name}</span>${it.alias ? `<small>like ${it.alias}</small>` : ""}</button>`).join("") : "";
+      }).join("") || `<p class="hint">No fonts match “${q}”.</p>`;
+    };
+    fpop.innerHTML = `<input type="search" class="fsearch" placeholder="Search fonts (e.g. Calibri, Garamond)" aria-label="Search fonts"><div class="flist"></div>
+      <div class="factions">${canUseLocalFonts() ? '<button data-fa="local">Use fonts on this computer</button>' : ""}<button data-fa="upload">Upload font file…</button></div>`;
+    render();
+    const r = anchor.getBoundingClientRect(), host = el.getBoundingClientRect();
+    const w = 280, left = Math.max(8, Math.min(r.left - host.left, host.width - w - 8));
+    const below = r.bottom - host.top + 6, room = host.height - below - 8;
+    fpop.style.left = `${left}px`; fpop.style.width = `${w}px`;
+    if (room > 260) { fpop.style.top = `${below}px`; fpop.style.bottom = ""; fpop.style.maxHeight = `${room}px`; }
+    else { fpop.style.top = ""; fpop.style.bottom = `${host.bottom - r.top + 6}px`; fpop.style.maxHeight = `${r.top - host.top - 14}px`; }
+    fpop.hidden = false;
+    const qi = fpop.querySelector(".fsearch");
+    qi.addEventListener("input", () => render(qi.value));
+    qi.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeFonts(); });
+    qi.focus();
+  }
+  const closeFonts = () => { fpop.hidden = true; };
+  // Hovering a font shows its name in that font (downloads just that one).
+  fpop.addEventListener("pointerover", (e) => {
+    const b = e.target.closest("[data-font-id]"); if (!b || b.dataset.preview) return;
+    b.dataset.preview = "1";
+    const id = b.dataset.fontId;
+    if (!(id in BASIC)) ensureFont(id).then((ok) => { if (ok) b.style.fontFamily = cssFamily(id).replace(/"/g, "'"); });
+  });
+  fpop.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-font-id]");
+    if (b) { setProp("font", b.dataset.fontId, true); closeFonts(); renderPanel(); return; }
+    const a = e.target.closest("[data-fa]")?.dataset.fa;
+    if (a === "local") {
+      try { const n = await addLocalFonts(); await refreshFonts(); toast(n ? `Added ${n} font famil${n === 1 ? "y" : "ies"} from this computer.` : "No fonts were shared."); openFonts(panel.querySelector(".fontbtn") || el); }
+      catch { toast("The browser didn't allow access to your fonts."); }
+    }
+    if (a === "upload") upInput.click();
+  });
+  upInput.addEventListener("change", async () => {
+    let last = null, bad = 0;
+    for (const f of upInput.files) { try { last = await addUploadedFont(f); } catch { bad++; } }
+    upInput.value = "";
+    await refreshFonts();
+    if (bad) toast(`${bad} file${bad === 1 ? "" : "s"} couldn't be read as a font (use .ttf or .otf).`);
+    if (last) { setProp("font", last, true); closeFonts(); renderPanel(); toast("Font added. It's kept in this browser for next time."); }
+  });
+  document.addEventListener("pointerdown", (e) => { if (!fpop.hidden && !fpop.contains(e.target) && !e.target.closest(".fontbtn")) closeFonts(); }, true);
 
   // The color well in the left rail: shows the color of the selected annotation
   // (or the current tool) and opens a palette with a custom picker.
@@ -376,7 +448,7 @@ export function createPageView(ctx) {
   panel.addEventListener("click", (e) => {
     const t = e.target.closest("button"); if (!t) return;
     if (t.dataset.preset) return search(PRESETS[t.dataset.preset].re, PRESETS[t.dataset.preset].label.toLowerCase());
-    if (t.dataset.font) { setProp("font", t.dataset.font, true); return renderPanel(); }
+    if (t.dataset.a === "fontpick") return fpop.hidden ? openFonts(t) : closeFonts();
     if (t.dataset.toggle) { setProp(t.dataset.toggle, !val(t.dataset.toggle), true); return renderPanel(); }
   });
   // Sliders, number fields and the color picker: live on input, committed on change.

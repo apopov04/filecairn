@@ -10,6 +10,7 @@
 //   { type: "image", x, y, w, h, src, rot }             (a signature or initials: PNG data URL; x, y = top-left)
 
 import { indexText, boxesFor } from "./redact.js";
+import { cssFamily, ensureFont } from "./fonts.js";
 
 export const COLORS = {
   highlight: ["#ffd400", "#7dffa6", "#7fd6ff", "#ff9bd2", "#ffa45c"],
@@ -106,8 +107,8 @@ export function textRects(items, [x1, y1, x2, y2]) {
 /* ------------------------------ canvas renderer ----------------------------- */
 
 /** CSS font for a text annotation at `px` pixels. */
-export const FONTS = { sans: "Helvetica, Arial, sans-serif", serif: '"Times New Roman", Times, serif', mono: '"Courier New", Courier, monospace' };
-export const cssFont = (a, px) => `${a.italic ? "italic " : ""}${a.bold ? "bold " : ""}${px}px ${FONTS[a.font] || FONTS.sans}`;
+// (Starts loading library/custom fonts on first use; canvases redraw via onFontLoad.)
+export const cssFont = (a, px) => { ensureFont(a.font, a.bold, a.italic); return `${a.italic ? "italic " : ""}${a.bold ? "bold " : ""}${px}px ${cssFamily(a.font)}`; };
 
 
 /**

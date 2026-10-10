@@ -121,10 +121,30 @@ check("the rail color well opens a palette showing the selected text's color", a
 await shot("A1c-color-pop");
 await page.evaluate(() => { const c = document.querySelector('.cpop input[type=color]'); c.value = "#123456"; c.dispatchEvent(new Event("input", { bubbles: true })); c.dispatchEvent(new Event("change", { bubbles: true })); });
 await page.evaluate(() => { const n = document.querySelector('.rpanel input[type=number][data-prop=size]'); n.value = "28"; n.dispatchEvent(new Event("input", { bubbles: true })); n.dispatchEvent(new Event("change", { bubbles: true })); });
-await page.evaluate(() => document.querySelector('.rpanel [data-font=serif]').click());
+await page.click(".rpanel .fontbtn"); await sleep(150);
+await page.evaluate(() => document.querySelector('.fpop [data-font-id=serif]').click());
 await page.evaluate(() => document.querySelector('.rpanel [data-toggle=bold]').click());
 a = (await annotsOf(2))[5];
 check("custom color, typed size, serif and bold applied to the selected text", a.color === "#123456" && a.size === 28 && a.font === "serif" && a.bold === true, a);
+// Font library: search "Calibri" -> Carlito.
+await page.click(".rpanel .fontbtn"); await sleep(150);
+await page.type(".fpop .fsearch", "Calibri"); await sleep(100);
+const found = await page.evaluate(() => [...document.querySelectorAll(".fpop .fitem")].map((b) => b.textContent));
+check("searching 'Calibri' finds its stand-in", found.length === 1 && found[0].includes("Carlito") && found[0].includes("like Calibri"), found);
+await page.evaluate(() => document.querySelector(".fpop .fitem").click()); await sleep(600);
+check("text box now uses Carlito, loaded on demand", (await annotsOf(2))[5].font === "carlito" && await page.evaluate(() => document.fonts.check('bold 16px "fc-carlito"')), (await annotsOf(2))[5].font);
+// Upload a font file (a library TTF under another name).
+const ttf = new URL("../../vendor/fonts/library/great-vibes/regular.ttf", import.meta.url).pathname;
+await page.click(".rpanel .fontbtn"); await sleep(150);
+const [chooser] = await Promise.all([page.waitForFileChooser(), page.evaluate(() => document.querySelector('.fpop [data-fa=upload]').click())]);
+fs.copyFileSync(ttf, "/tmp/MyHand-Regular.ttf"); await chooser.accept(["/tmp/MyHand-Regular.ttf"]); await sleep(800);
+check("uploaded font is added and applied", (await annotsOf(2))[5].font === "upload:MyHand", (await annotsOf(2))[5].font);
+await page.click(".rpanel .fontbtn"); await sleep(150);
+check("uploaded font listed under Uploaded", await page.evaluate(() => [...document.querySelectorAll(".fpop .fgroup")].some((g) => g.textContent === "Uploaded")), null);
+await shot("A1d-fonts");
+await page.keyboard.press("Escape");
+// Put Carlito back for the saved-file check.
+await page.click(".rpanel .fontbtn"); await sleep(100); await page.type(".fpop .fsearch", "Carlito"); await page.evaluate(() => document.querySelector(".fpop .fitem").click()); await sleep(300);
 // Text tool on existing text edits it.
 await page.keyboard.press("t");
 await page.mouse.click(...await at(70, 772)); await sleep(150);
@@ -167,6 +187,9 @@ const res = await page.evaluate(async () => {
   return out;
 });
 check("text box is real text in the saved PDF", res[1].text.includes("Hello Filecairn!"), res[1].text);
+{ const d2 = await PDFDocument.load(Buffer.from(await page.evaluate(async () => { const b = await filecairn.exportPdf({ as: "bytes" }); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s); }), "base64"));
+  const raw = Buffer.from(await d2.save({ useObjectStreams: false })).toString("latin1");
+  check("Carlito is embedded in the saved PDF", /\/BaseFont\s*\/(?:[A-Z]{6}\+)?Carlito/.test(raw), (raw.match(/\/BaseFont\s*\/[^\s/]+/g) || []).slice(0, 8)); }
 // The text highlight must be the first content stream on page 2 (drawn under the text).
 const bytes = Buffer.from(await page.evaluate(async () => { const b = await filecairn.exportPdf({ as: "bytes" }); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s); }), "base64");
 const pd = await PDFDocument.load(bytes), p2 = pd.getPages()[1];

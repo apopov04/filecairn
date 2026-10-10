@@ -6,6 +6,7 @@ import { PDFDocument, degrees, rgb, BlendMode, StandardFonts, PDFHexString, PDFN
 import { norm } from "./pages.js";
 import { drawAnnots } from "./annots.js";
 import { answersFor, fillAndFlatten } from "./forms.js";
+import { isBasic, fontBytes } from "./fonts.js";
 
 const VENDOR = new URL("../vendor/pdfjs/", import.meta.url).href;
 pdfjs.GlobalWorkerOptions.workerSrc = VENDOR + "pdf.worker.min.mjs";
@@ -202,6 +203,23 @@ async function uniFont(out, fonts, v = 0) {
 }
 
 async function fontFor(out, a, fonts) {
+  // Library, local and uploaded fonts are embedded (subset to the letters used).
+  if (!isBasic(a.font)) {
+    const key = `${a.font}:${a.bold ? "b" : ""}${a.italic ? "i" : ""}`;
+    if (!(key in fonts)) {
+      fonts[key] = null;
+      try {
+        const bytes = await fontBytes(a.font, a.bold, a.italic);
+        if (bytes) {
+          if (!globalThis.fontkit) await new Promise((ok, fail) => { const sc = document.createElement("script"); sc.src = new URL("../vendor/fontkit/fontkit.umd.min.js", import.meta.url).href; sc.onload = ok; sc.onerror = fail; document.head.append(sc); });
+          if (!fonts.kit) { out.registerFontkit(globalThis.fontkit); fonts.kit = true; }
+          fonts[key] = await out.embedFont(bytes, { subset: true });
+        }
+      } catch { fonts[key] = null; }
+    }
+    if (fonts[key]) return fonts[key];
+    a = { ...a, font: "sans" }; // couldn't load it: fall back to Helvetica
+  }
   const v = (a.bold ? 1 : 0) + (a.italic ? 2 : 0), name = STD[a.font in STD ? a.font : "sans"][v];
   fonts[name] ??= await out.embedFont(StandardFonts[name]);
   try { fonts[name].encodeText(a.text); return fonts[name]; } catch { /* not WinAnsi */ }

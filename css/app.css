@@ -249,3 +249,17 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .signdlg .ink .clear { margin-left: auto; }
 .signdlg .sw { width: 26px; height: 26px; padding: 0; border-radius: 50%; }
 .signdlg .sw.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Font picker */
+.fontrow { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.fontbtn { justify-content: space-between; text-align: left; font-weight: 400; font-size: 15px; padding: 8px 10px; }
+.fontbtn::after { content: "▾"; color: var(--muted); font-family: system-ui, sans-serif; font-size: 12px; }
+.fpop { position: absolute; z-index: 31; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+.fpop .fsearch { margin: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; background: var(--bg); }
+.fpop .flist { overflow-y: auto; padding: 0 6px 6px; flex: 1 1 auto; min-height: 0; }
+.fpop .fgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 10px 8px 4px; font-family: var(--font); }
+.fpop .fitem { width: 100%; justify-content: space-between; border: 0; background: transparent; padding: 6px 8px; border-radius: 6px; font-size: 15px; text-align: left; }
+.fpop .fitem small { font-family: var(--font); font-size: 11px; color: var(--muted); }
+.fpop .fitem.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-weight: 600; }
+.fpop .factions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--line); }
+.fpop .factions button { font-size: 12px; padding: 5px 9px; }

@@ -8,7 +8,7 @@ export const saveSign = (kind, url) => { const s = savedSigns(); if (url) s[kind
 
 let fontReady = null;
 function loadFont() {
-  fontReady ??= new FontFace("FcSignature", `url(${new URL("../vendor/fonts/DancingScript.ttf", import.meta.url).href})`).load().then((f) => { document.fonts.add(f); return true; }).catch(() => false);
+  fontReady ??= new FontFace("FcSignature", `url(${new URL("../vendor/fonts/library/dancing-script/regular.ttf", import.meta.url).href})`).load().then((f) => { document.fonts.add(f); return true; }).catch(() => false);
   return fontReady;
 }
 
