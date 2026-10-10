@@ -6,7 +6,9 @@
 import * as P from "./pages.js";
 import { renderPage, textItems, rectToViewport, toUserSpace } from "./engine.js";
 import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
-import { COLORS, drawAnnots, hit, translate, textRects, cssFont } from "./annots.js";
+import { COLORS, drawAnnots, hit, translate, textRects, cssFont, imageCorner, onImageLoad } from "./annots.js";
+import { fieldsOf } from "./forms.js";
+import { createSignature, savedSigns, saveSign } from "./sign.js";
 import { ph } from "./icons.js";
 import { historyPanel, splitter } from "./history.js";
 
@@ -23,6 +25,8 @@ const TOOLS = [
   { id: "arrow", icon: "arrow-up-right", label: "Arrow", key: "a", hint: "Drag to draw an arrow." },
   { id: "text", icon: "text-t", label: "Text box", key: "t", hint: "Click where the text should start, then type. Click elsewhere or press Esc when done." },
   { id: "note", icon: "chat-centered-text", label: "Sticky note", key: "n", hint: "Click to place a note and type your comment. It's saved as a real PDF comment." },
+  { id: "form", icon: "textbox", label: "Fill form", key: "f", hint: "Click a form field and type, tick boxes and pick options. Tab moves to the next field." },
+  { id: "sign", icon: "signature", label: "Sign", key: "g", hint: "Create your signature or initials, then click the page to place it. Drag the corner handle to resize, drag the signature to move it." },
 ];
 const MARKUP = new Set(["highlight", "underline", "strike"]);
 
@@ -38,7 +42,8 @@ export function createPageView(ctx) {
   const save = () => localStorage.setItem("fc-tools", JSON.stringify(opt));
   let id = null, base = null, over = null, hl = null, sel = null, drag = null, editor = null, renderToken = 0;
   let zoom = 1, anchor = null; // zoom relative to "fit"; anchor keeps a point under the cursor
-  let live = null; // { i, a }: an annotation being restyled (slider/picker drag), not yet committed
+  let live = null;
+  let placing = null; // Sign tool: { kind: "signature" | "initials" | "date", src, ratio } waiting for a click on the page // { i, a }: an annotation being restyled (slider/picker drag), not yet committed
   // sel: { kind: "annot" | "mark", i }
 
   const el = document.createElement("section");
@@ -108,7 +113,8 @@ export function createPageView(ctx) {
       // it so text stays visible, like a real highlighter. Everything else is on top.
       const layer = (cls) => { const l = document.createElement("canvas"); l.className = cls; l.width = c.width; l.height = c.height; l.style.width = c.style.width; return l; };
       hl = layer("rover rhl"); over = layer("rover");
-      box.replaceChildren(base, hl, over);
+      fieldsEl = document.createElement("div"); fieldsEl.className = "rfields";
+      box.replaceChildren(base, hl, over, fieldsEl);
       if (editor) box.append(editor.el);
       $(".zlabel").textContent = `${Math.round(zoom * 100)}%`;
       if (anchor) { // keep the document point under the cursor in place
@@ -121,7 +127,59 @@ export function createPageView(ctx) {
     draw();
     renderPanel();
     hist.render();
+    renderFields();
   }
+
+  /* ------------------------------- form fields ------------------------------ */
+
+  // Real inputs over the page's form fields. Active with the Fill form tool;
+  // otherwise they just show the answers.
+  let fieldsEl = null, fieldsToken = 0;
+  async function renderFields() {
+    const p = page(); if (!fieldsEl || !p) return;
+    const tok = ++fieldsToken, fields = p.blank ? [] : await fieldsOf(S.sources[p.src], p.index);
+    if (tok !== fieldsToken || !fieldsEl) return;
+    const active = opt.tool === "form", k = scale(), answers = p.fields || {};
+    fieldsEl.classList.toggle("active", active);
+    if (fieldsEl.contains(document.activeElement)) return; // don't rebuild under the user's typing
+    fieldsEl.replaceChildren(...fields.map((f) => {
+      const [x, y, w, h] = rectToViewport(base.viewport, f.rect).map((v) => v / k);
+      const v = f.name in answers ? answers[f.name] : f.value;
+      let inp;
+      if (f.kind === "select") {
+        inp = document.createElement("select");
+        inp.innerHTML = `<option value=""></option>${f.options.map((o) => `<option value="${o.value.replace(/"/g, "&quot;")}">${o.label.replace(/</g, "&lt;")}</option>`).join("")}`;
+        inp.value = v || "";
+        inp.style.fontSize = `${Math.max(5, Math.min(h * 0.6, 12 / ptsPerCss()))}px`;
+      } else if (f.kind === "check" || f.kind === "radio") {
+        inp = document.createElement("input"); inp.type = f.kind === "check" ? "checkbox" : "radio";
+        if (f.kind === "radio") { inp.name = `fc-${id}-${f.name}`; inp.checked = v === f.on; } else inp.checked = !!v;
+      } else {
+        inp = document.createElement(f.kind === "multiline" ? "textarea" : "input");
+        if (inp.tagName === "INPUT") inp.type = "text";
+        inp.value = v ?? ""; if (f.maxLen) inp.maxLength = f.maxLen;
+        // Text scales with the page (about 11 pt on paper), so it fits at any zoom.
+        const pt = 1 / ptsPerCss();
+        inp.style.fontSize = `${Math.max(5, f.kind === "multiline" ? 11 * pt : Math.min(h * 0.62, 12 * pt))}px`;
+      }
+      inp.className = `ff ff-${f.kind}`;
+      inp.style.cssText += `;left:${x}px;top:${y}px;width:${w}px;height:${h}px`;
+      inp.setAttribute("aria-label", f.name);
+      inp.disabled = f.readOnly; inp.tabIndex = active ? 0 : -1;
+      const commitVal = () => {
+        const val = f.kind === "check" ? inp.checked : f.kind === "radio" ? f.on : inp.value;
+        const cur = page().fields || {};
+        if (cur[f.name] === val || (!(f.name in cur) && val === f.value)) return;
+        commit(P.setFields(S.pages, id, { ...cur, [f.name]: val }), "fill form");
+      };
+      inp.addEventListener("change", commitVal);
+      inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter" && inp.tagName === "INPUT") inp.blur(); });
+      return inp;
+    }));
+    if (active && !fields.length && !p.blank) toastOnce("This page has no form fields. Type on the lines with the Text box tool, and sign with Sign.");
+  }
+  let toasted = new Set();
+  const toastOnce = (m) => { if (!toasted.has(m)) { toasted.add(m); toast(m, 4500); } };
 
   // A blank page has no pdf.js viewport: make one (y flipped, like pdf.js).
   function blankCanvas(p, fit) {
@@ -162,6 +220,12 @@ export function createPageView(ctx) {
     const shown = list.filter((a) => !(editor && a === editor.annot)), isHl = (a) => a.type === "highlight";
     drawAnnots(gh, vp, shown, -1, (a) => !isHl(a));
     drawAnnots(g, vp, shown, sel?.kind === "annot" ? sel.i : -1, isHl);
+    // Resize handle on a selected signature.
+    const sa = sel?.kind === "annot" ? (live?.i === sel.i ? live.a : drag?.replace === sel.i && drag.preview ? drag.preview : annots()[sel.i]) : null;
+    if (sa?.type === "image") {
+      const [cx, cy] = imageCorner(sa), [a, b, c, d, e, f] = vp.transform, hx = a * cx + c * cy + e, hy = b * cx + d * cy + f, hs = 7 * scale();
+      g.fillStyle = "#fff"; g.strokeStyle = "#0F5468"; g.lineWidth = 2 * scale(); g.fillRect(hx - hs, hy - hs, hs * 2, hs * 2); g.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
+    }
   }
 
   /* ---------------------------------- panel --------------------------------- */
@@ -176,7 +240,7 @@ export function createPageView(ctx) {
     const t = TOOLS.find((x) => x.id === opt.tool), k = kind(), tgt = target();
     el.querySelectorAll(".tool").forEach((b) => { const on = b.dataset.tool === opt.tool; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
     box.dataset.tool = opt.tool;
-    const kt = TOOLS.find((x) => x.id === k);
+    const kt = TOOLS.find((x) => x.id === k) || { label: k === "image" ? "Signature" : k };
     const parts = [tgt ? `<h2>Selected ${kt.label.toLowerCase()}</h2><p class="hint">Changes below apply to it. Drag to move, Delete removes${["text", "note"].includes(k) ? ", double-click to edit the text" : ""}.</p>` : `<h2>${t.label}</h2><p class="hint">${t.hint}</p>`];
     if (["ink", "rect", "ellipse", "line", "arrow"].includes(k)) parts.push(slider("width", "Line width", 0.5, 20, 0.5, "pt"));
     if (k === "text") {
@@ -184,6 +248,8 @@ export function createPageView(ctx) {
       parts.push(`<div class="seg" role="radiogroup" aria-label="Font">${[["sans", "Sans"], ["serif", "Serif"], ["mono", "Mono"]].map(([f, l]) => `<button role="radio" aria-checked="${val("font") === f}" class="${val("font") === f ? "on" : ""}" data-font="${f}" style="font-family:${f === "serif" ? "Times New Roman, serif" : f === "mono" ? "Courier New, monospace" : "inherit"}">${l}</button>`).join("")}</div>`);
       parts.push(`<div class="seg"><button aria-pressed="${!!val("bold")}" class="${val("bold") ? "on" : ""}" data-toggle="bold"><b>Bold</b></button><button aria-pressed="${!!val("italic")}" class="${val("italic") ? "on" : ""}" data-toggle="italic"><i>Italic</i></button></div>`);
     }
+    if (k === "sign" || (k === "image" && opt.tool === "sign")) parts.push(signPanel());
+    if (k === "form") parts.push('<p class="note">Your answers are written into the saved PDF and become part of the page, so the form can\'t be changed afterwards.</p>');
     const n = annots().length;
     if (opt.tool !== "redact") {
       parts.push(`<div class="rcount">${n ? `${n} annotation${n === 1 ? "" : "s"} on this page` : "No annotations on this page yet."}</div>`);
@@ -199,7 +265,7 @@ export function createPageView(ctx) {
   // The color well in the left rail: shows the color of the selected annotation
   // (or the current tool) and opens a palette with a custom picker.
   const well = $(".cwell"), pop = $(".cpop");
-  const hasColor = () => !["select", "redact"].includes(kind());
+  const hasColor = () => !["select", "redact", "form", "sign", "image"].includes(kind());
   function updateWell() {
     const on = hasColor();
     well.disabled = !on;
@@ -240,6 +306,35 @@ export function createPageView(ctx) {
     }
     if (editor && editor.annot.type === "text") { editor.annot = { ...editor.annot, [prop]: value }; styleEditor(); }
   }
+
+  // Sign tool: saved signature and initials, plus today's date.
+  const DATE_FORMATS = { long: { day: "numeric", month: "long", year: "numeric" }, short: { day: "2-digit", month: "2-digit", year: "numeric" }, iso: null };
+  const today = (f = opt.dateFmt || "long") => (f === "iso" ? new Date().toISOString().slice(0, 10) : new Date().toLocaleDateString(undefined, DATE_FORMATS[f]));
+  function signPanel() {
+    const s = savedSigns(), row = (kind, label) => s[kind]
+      ? `<div class="signrow"><button class="signthumb${placing?.kind === kind ? " on" : ""}" data-place="${kind}" title="Click, then click the page to place it"><img src="${s[kind]}" alt="Your ${kind}"></button><div class="col"><button data-a="newsign" data-kind="${kind}">Redo</button><button data-a="delsign" data-kind="${kind}" class="danger">Delete</button></div></div>`
+      : `<button class="primary" data-a="newsign" data-kind="${kind}">Create ${label}</button>`;
+    return `<div class="signbox"><h3>Signature</h3>${row("signature", "signature")}<h3>Initials</h3>${row("initials", "initials")}
+      <h3>Date</h3><div class="row"><select id="date-fmt" aria-label="Date format">${Object.keys(DATE_FORMATS).map((f) => `<option value="${f}"${(opt.dateFmt || "long") === f ? " selected" : ""}>${today(f)}</option>`).join("")}</select><button data-place="date" class="${placing?.kind === "date" ? "on" : ""}">Place date</button></div>
+      ${placing ? `<p class="placing">Click on the page to place the ${placing.kind}. Esc cancels.</p>` : ""}
+      <p class="note">This is a visual signature, like signing a printout. It's not a certificate-based digital signature. Saved signatures stay in this browser.</p></div>`;
+  }
+  async function arm(kind) {
+    if (kind === "date") { placing = { kind }; return renderPanel(); }
+    const src = savedSigns()[kind]; if (!src) return;
+    const img = new Image(); img.src = src; await img.decode().catch(() => {});
+    placing = { kind, src, ratio: img.naturalHeight / img.naturalWidth || 0.35 };
+    renderPanel();
+  }
+  panel.addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.place) return placing?.kind === b.dataset.place ? ((placing = null), renderPanel()) : arm(b.dataset.place);
+    if (b.dataset.a === "newsign") { const url = await createSignature(b.dataset.kind); if (url) await armUrl(b.dataset.kind, url); } // saved only if "Remember" was ticked
+    if (b.dataset.a === "delsign") { saveSign(b.dataset.kind, null); if (placing?.kind === b.dataset.kind) placing = null; renderPanel(); }
+  });
+  async function armUrl(kind, src) { const img = new Image(); img.src = src; await img.decode().catch(() => {}); placing = { kind, src, ratio: img.naturalHeight / img.naturalWidth || 0.35 }; renderPanel(); }
+  panel.addEventListener("change", (e) => { if (e.target.id === "date-fmt") { opt.dateFmt = e.target.value; save(); } });
+  onImageLoad(() => { draw(); });
 
   let lastQuery = "", found = null;
   function redactPanel() {
@@ -312,11 +407,34 @@ export function createPageView(ctx) {
   }
 
   box.addEventListener("pointerdown", async (e) => {
-    if (!base || e.button !== 0 || e.target.closest(".tbox")) return;
+    if (!base || e.button !== 0 || e.target.closest(".tbox") || e.target.closest(".rfields.active")) return;
     if (editor) { finishEditor(); return; }
     const [x, y] = toUser(e), tool = opt.tool, color = opt.color[tool];
     box.setPointerCapture(e.pointerId);
     e.preventDefault();
+    // Resize handle of a selected signature (Select and Sign tools).
+    const selA = sel?.kind === "annot" ? annots()[sel.i] : null;
+    if (selA?.type === "image" && (tool === "select" || tool === "sign")) {
+      const [cx, cy] = imageCorner(selA);
+      if (Math.hypot(cx - x, cy - y) <= 9 * ptsPerCss()) { drag = { mode: "resize", x, y, orig: selA, replace: sel.i }; return; }
+    }
+    if (tool === "sign") {
+      if (placing) {
+        const r = pageRot(), right = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] }[r], down = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] }[r];
+        if (placing.kind === "date") addAnnot({ type: "text", color: "#1d1d1f", size: 12, font: "sans", x, y: y, text: today(), rot: r }, "add date");
+        else {
+          const p = page(), pw = P.norm((p.own || 0) + p.rot) % 180 ? p.h : p.w, w = Math.min(placing.kind === "initials" ? 60 : 160, pw * 0.4), h = w * placing.ratio;
+          addAnnot({ type: "image", src: placing.src, w, h, rot: r, x: x - right[0] * w / 2 - down[0] * h / 2, y: y - right[1] * w / 2 - down[1] * h / 2 }, placing.kind === "initials" ? "add initials" : "add signature");
+        }
+        placing = null; renderPanel(); return;
+      }
+      const i = hit(annots(), x, y, 6 * ptsPerCss());
+      if (i >= 0 && annots()[i].type === "image") { sel = { kind: "annot", i }; drag = { mode: "move", x, y, orig: annots()[i], replace: i }; draw(); renderPanel(); return; }
+      sel = null; draw(); renderPanel();
+      if (!savedSigns().signature && !savedSigns().initials) toastOnce("Create your signature first (in the panel on the right).");
+      return;
+    }
+    if (tool === "form") return;
     if (tool === "select") {
       const i = hit(annots(), x, y, 6 * ptsPerCss());
       if (i >= 0) { sel = { kind: "annot", i }; drag = { mode: "move", x, y, orig: annots()[i], replace: i }; }
@@ -341,6 +459,11 @@ export function createPageView(ctx) {
     const [x, y] = toUser(e), c = opt.color[drag.mode], w = opt.width;
     switch (drag.mode) {
       case "move": drag.preview = translate(drag.orig, x - drag.x, y - drag.y); break;
+      case "resize": { // keep the aspect ratio; scale by how far the corner moved
+        const o = drag.orig, [cx, cy] = imageCorner(o), d0 = Math.hypot(cx - o.x, cy - o.y), d1 = Math.hypot(x - o.x, y - o.y);
+        const f = Math.max(12 / o.w, d1 / (d0 || 1));
+        drag.preview = { ...o, w: o.w * f, h: o.h * f }; break;
+      }
       case "movemark": { const dx = x - drag.x, dy = y - drag.y, r = drag.orig; drag.markMove = { i: sel.i, r: [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy] }; break; }
       case "ink": { const p = drag.pts, lx = p[p.length - 2], ly = p[p.length - 1]; if (Math.hypot(x - lx, y - ly) > 0.8 * ptsPerCss()) p.push(x, y); drag.preview = { type: "ink", color: c, width: w, paths: [p.slice()] }; break; }
       case "rect": case "ellipse": drag.preview = { type: drag.mode, color: c, width: w, rect: normRect([drag.x, drag.y, x, y]) }; break;
@@ -354,7 +477,7 @@ export function createPageView(ctx) {
     const d = drag; drag = null;
     if (!d) return;
     const small = (r) => Math.abs(r[2] - r[0]) < 2 * ptsPerCss() || Math.abs(r[3] - r[1]) < 2 * ptsPerCss();
-    if (d.mode === "move") { if (d.preview) { const list = annots().slice(); list[d.replace] = d.preview; setAnnots(list, "move annotation"); } }
+    if (d.mode === "move" || d.mode === "resize") { if (d.preview) { const list = annots().slice(); list[d.replace] = d.preview; setAnnots(list, d.mode === "resize" ? "resize signature" : "move annotation"); } }
     else if (d.mode === "movemark") { if (d.markMove) { const list = marks().slice(); list[d.markMove.i] = d.markMove.r; commit(P.setMarks(S.pages, id, list), "move mark"); } }
     else if (d.mode === "redact") { if (d.markRect && !small(d.markRect)) { commit(P.setMarks(S.pages, id, [...marks(), d.markRect]), "mark area"); sel = { kind: "mark", i: marks().length - 1 }; } }
     else if (d.mode === "ink") addAnnot({ type: "ink", color: opt.color.ink, width: opt.width, paths: [d.pts] }, "draw");
@@ -421,7 +544,7 @@ export function createPageView(ctx) {
   /* --------------------------------- chrome --------------------------------- */
 
   const go = (dlt) => { const i = pos() + dlt; if (S.pages[i]) { finishEditor(); id = S.pages[i].id; sel = null; base = null; show(); } };
-  const setTool = (t) => { finishEditor(); opt.tool = t; sel = null; save(); draw(); renderPanel(); };
+  const setTool = (t) => { finishEditor(); opt.tool = t; sel = null; placing = null; save(); draw(); renderPanel(); renderFields(); };
   el.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.tool) return setTool(b.dataset.tool);
@@ -460,6 +583,7 @@ export function createPageView(ctx) {
     refresh() { if (!el.hidden) { if (sel && (sel.kind === "annot" ? !annots()[sel.i] : !marks()[sel.i])) sel = null; show(); } },
     keydown(e) {
       if (e.target.closest?.("input, select, textarea")) return false;
+      if (e.key === "Escape" && placing) { placing = null; renderPanel(); return true; }
       if (e.key === "Escape") { if (sel) { sel = null; draw(); renderPanel(); } else close(); return true; }
       if (e.key === "Delete" || e.key === "Backspace") return removeSelected() || true;
       if (e.key === "+" || e.key === "=") { zoomBy(1.25); return true; }

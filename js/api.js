@@ -5,6 +5,7 @@
 
 import * as P from "./pages.js";
 import { textItems } from "./engine.js";
+import { fieldsOf } from "./forms.js";
 import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
 
 const METHODS = [
@@ -21,6 +22,8 @@ const METHODS = [
   ["clearMarks(pages?)", "Remove redaction marks (all pages if omitted)."],
   ["addAnnotation(page, annotation)", "Add an annotation in PDF points (y up, from the page's bottom-left). Types: { type: \"highlight\"|\"underline\"|\"strike\", color, rects: [[x1,y1,x2,y2]] }, { type: \"ink\", color, width, paths: [[x,y,x,y,…]] }, { type: \"rect\"|\"ellipse\", color, width, rect }, { type: \"line\"|\"arrow\", color, width, from: [x,y], to: [x,y] }, { type: \"text\", x, y (top-left), size, color, text }, { type: \"note\", x, y, color, text }. Colors are #rrggbb."],
   ["clearAnnotations(pages?)", "Remove annotations (all pages if omitted)."],
+  ["formFields(page)", "The page's form fields: [{ name, kind: \"text\"|\"multiline\"|\"check\"|\"radio\"|\"select\", value, options, on }]."],
+  ["fillField(page, name, value)", "Fill a form field: text for text fields, true/false for checkboxes, the option value for radios and dropdowns. Answers are written in (flattened) on save."],
   ["exportPdf({ pages, as })", "Build the PDF (optionally only some pages). as: \"blob\" (default), \"bytes\" or \"dataurl\". Doesn't download."],
   ["save()", "Download the whole PDF, like the Save button."],
   ["undo() / redo()", "Undo or redo the last change."],
@@ -42,7 +45,7 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     throw new Error("open() takes File/Blob objects or data: URLs. (Fetching other websites is blocked by Filecairn's privacy policy.)");
   };
   const api = {
-    version: "0.3.0", apiVersion: 1,
+    version: "0.4.0", apiVersion: 1,
     help: () => METHODS.map(([sig, desc]) => ({ sig, desc })),
     async open(files) {
       const list = await Promise.all((Array.isArray(files) ? files : [files]).map(toFile));
@@ -86,13 +89,27 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     },
     async addAnnotation(page, a) {
       need(); const id = [...ids([page], "page")][0], p = S.pages.find((q) => q.id === id);
-      const ok = { highlight: ["rects"], underline: ["rects"], strike: ["rects"], ink: ["paths"], rect: ["rect"], ellipse: ["rect"], line: ["from", "to"], arrow: ["from", "to"], text: ["x", "y", "text"], note: ["x", "y"] }[a?.type];
+      const ok = { image: ["x", "y", "w", "h", "src"], highlight: ["rects"], underline: ["rects"], strike: ["rects"], ink: ["paths"], rect: ["rect"], ellipse: ["rect"], line: ["from", "to"], arrow: ["from", "to"], text: ["x", "y", "text"], note: ["x", "y"] }[a?.type];
       if (!ok) throw new Error("Unknown annotation type. See filecairn.help().");
       for (const k of ok) if (a[k] == null) throw new Error(`A ${a.type} annotation needs "${k}".`);
       const an = { color: a.type === "highlight" || a.type === "note" ? "#ffd400" : "#d93f3f", width: 2, size: 14, rot: 0, ...a };
       if (an.color && !/^#[0-9a-f]{6}$/i.test(an.color)) throw new Error("color must be #rrggbb.");
       commit(P.setAnnots(S.pages, id, [...(p.annots || []), an]), `add ${a.type}`);
       return api.info().pages[S.pages.findIndex((q) => q.id === id)];
+    },
+    async formFields(page) {
+      need(); const id = [...ids([page], "page")][0], p = S.pages.find((q) => q.id === id);
+      if (p.blank) return [];
+      return (await fieldsOf(S.sources[p.src], p.index)).map((f) => ({ name: f.name, kind: f.kind, value: p.fields && f.name in p.fields ? p.fields[f.name] : f.value, options: f.options?.map((o) => o.value) || null, on: f.on }));
+    },
+    async fillField(page, name, value) {
+      need(); const id = [...ids([page], "page")][0], p = S.pages.find((q) => q.id === id);
+      const f = (await api.formFields(page)).find((x) => x.name === name);
+      if (!f) throw new Error(`Page ${page} has no field "${name}". See formFields(${page}).`);
+      if (f.kind === "check" && typeof value !== "boolean") throw new Error(`"${name}" is a checkbox: pass true or false.`);
+      if ((f.kind === "radio" || f.kind === "select") && f.options && !f.options.includes(value)) throw new Error(`"${name}" accepts: ${f.options.join(", ")}.`);
+      commit(P.setFields(S.pages, id, { ...(p.fields || {}), [name]: value }), "fill form");
+      return api.formFields(page);
     },
     async clearAnnotations(pages) {
       need(); const s = pages ? ids(pages) : null;

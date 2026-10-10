@@ -5,6 +5,7 @@ import * as pdfjs from "../vendor/pdfjs/pdf.min.mjs";
 import { PDFDocument, degrees, rgb, BlendMode, StandardFonts, PDFHexString, PDFName, pushGraphicsState, popGraphicsState, setFillingRgbColor, rectangle, fill } from "../vendor/pdf-lib/pdf-lib.esm.min.js";
 import { norm } from "./pages.js";
 import { drawAnnots } from "./annots.js";
+import { answersFor, fillAndFlatten } from "./forms.js";
 
 const VENDOR = new URL("../vendor/pdfjs/", import.meta.url).href;
 pdfjs.GlobalWorkerOptions.workerSrc = VENDOR + "pdf.worker.min.mjs";
@@ -118,20 +119,30 @@ export async function renderPage(src, index, rot, width, marks = null, annots = 
  */
 export async function buildPdf(sources, pages, { dpi = 200 } = {}) {
   const out = await PDFDocument.create();
-  const libs = new Map(), copied = new Map();
+  const libs = new Map(), copied = new Map(), fonts = {};
+  // Sources with form answers are filled (and flattened) first; their pages are copied from the filled copy.
+  const filled = new Map();
+  for (const si of new Set(pages.filter((p) => !p.blank && p.fields).map((p) => p.src))) {
+    const bytes = await fillAndFlatten(sources[si].bytes, answersFor(pages, si), (doc) => uniFont(doc, fonts));
+    filled.set(si, { bytes, pdf: null });
+  }
   // Copy each source's pages in one go (faster than one at a time).
   for (const [src, list] of groupBySource(pages)) {
-    if (!libs.has(src)) libs.set(src, await PDFDocument.load(sources[src].bytes, { updateMetadata: false }));
+    if (!libs.has(src)) libs.set(src, await PDFDocument.load(filled.get(src)?.bytes || sources[src].bytes, { updateMetadata: false }));
     const got = await out.copyPages(libs.get(src), list.map((p) => p.index));
     list.forEach((p, i) => copied.set(p.id, got[i]));
   }
-  const fonts = {};
   for (const p of pages) {
     let page;
     if (p.blank) {
       page = out.addPage([p.w, p.h]);
       if (p.rot) page.setRotation(degrees(p.rot));
-    } else if (p.marks?.length) page = await addRedacted(out, sources[p.src], p, dpi);
+    } else if (p.marks?.length) {
+      // Redacted pages are rendered from the filled form when there is one, so the answers show.
+      const f = filled.get(p.src);
+      if (f && !f.pdf) f.pdf = await pdfjs.getDocument({ data: f.bytes.slice(), cMapUrl: VENDOR + "cmaps/", cMapPacked: true, standardFontDataUrl: VENDOR + "standard_fonts/", wasmUrl: VENDOR + "wasm/", isEvalSupported: false }).promise;
+      page = await addRedacted(out, f ? { pdf: f.pdf } : sources[p.src], p, dpi);
+    }
     else {
       page = out.addPage(copied.get(p.id));
       if (p.rot) page.setRotation(degrees(norm(page.getRotation().angle + p.rot)));
@@ -182,6 +193,14 @@ const STD = {
   mono: ["Courier", "CourierBold", "CourierOblique", "CourierBoldOblique"],
 };
 const LIB = ["Regular", "Bold", "Italic", "BoldItalic"];
+/** Liberation Sans for text pdf-lib's standard fonts can't encode. */
+async function uniFont(out, fonts, v = 0) {
+  if (!globalThis.fontkit) await new Promise((ok, fail) => { const sc = document.createElement("script"); sc.src = new URL("../vendor/fontkit/fontkit.umd.min.js", import.meta.url).href; sc.onload = ok; sc.onerror = fail; document.head.append(sc); });
+  out.registerFontkit(globalThis.fontkit);
+  const ttf = await (await fetch(`${VENDOR}standard_fonts/LiberationSans-${LIB[v]}.ttf`)).arrayBuffer();
+  return out.embedFont(ttf, { subset: true });
+}
+
 async function fontFor(out, a, fonts) {
   const v = (a.bold ? 1 : 0) + (a.italic ? 2 : 0), name = STD[a.font in STD ? a.font : "sans"][v];
   fonts[name] ??= await out.embedFont(StandardFonts[name]);
@@ -249,6 +268,14 @@ async function writeAnnots(out, page, annots, fonts, flattened) {
           const off = a.size * (0.8 + j * 1.2); // baseline of line j below the top edge
           page.drawText(line, { x: a.x + down[0] * off, y: a.y + down[1] * off, size: a.size, font, color: c, rotate: degrees(r) });
         });
+        break;
+      }
+      case "image": {
+        // Bottom-left corner as seen on screen, then rotate with the page as typed (like text).
+        const r = norm(a.rot || 0), down = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] }[r];
+        fonts.imgs ??= new Map();
+        if (!fonts.imgs.has(a.src)) fonts.imgs.set(a.src, await out.embedPng(a.src));
+        page.drawImage(fonts.imgs.get(a.src), { x: a.x + down[0] * a.h, y: a.y + down[1] * a.h, width: a.w, height: a.h, rotate: degrees(r) });
         break;
       }
       case "note": {

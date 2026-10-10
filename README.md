@@ -5,17 +5,18 @@
 
 Part of the Silicairn suite, alongside [Photocairn](https://photocairn.silicairn.com/) (photo editor).
 
-## Features (v0.3)
+## Features (v0.4)
 - **Open** PDFs, JPG, PNG and WebP (images become pages). Drop, pick or paste files; open several to **merge** them.
 - **Organise pages**: drag to reorder (several at once), rotate, duplicate, delete, insert blank pages. Undo/redo for everything.
 - **Extract** selected pages to a new PDF, or **split** into parts (every N pages, or ranges like `1-3, 4-8, 9-`), downloaded as one ZIP.
 - **Annotate**: highlight, underline or strike through text (drag over it), draw with a pen, add rectangles, ellipses, lines and arrows, text boxes and sticky notes. Pick colours from the colour well at the bottom of the tool rail (presets or a custom picker), set line width and text size with a slider or by typing the exact value, and choose Sans, Serif or Mono, bold and italic. Select an annotation to move, restyle or delete it; click a text box with the Text tool to edit it. Tools sit in a rail on the left; on the right are the tool settings and a History panel (click a step to jump back or forward) with a draggable divider between them. Zoom with the buttons, Ctrl+scroll/pinch or + / − / 0. Highlights on text are placed under the text so it keeps its colour. Everything is undoable. On save, markups are drawn into the page so they look the same in every viewer (text boxes stay real, searchable text, with a Unicode font when needed), and sticky notes become real PDF comments.
+- **Fill & sign**: fill in PDF forms (text, checkboxes, radio buttons, dropdowns) right on the page; answers are written into the saved file. Create a signature or initials by drawing, typing (handwriting font) or uploading a photo of a paper signature (the paper is removed), place and resize it, and add today's date. Signatures can be remembered in your browser; it's a visual signature, not a certificate-based one.
 - **Redact for real**: drag boxes over areas, or search for text and patterns (email addresses, phone numbers, long numbers, IBANs) to mark every match. On save, marked pages are flattened to images with the boxes burned in, so the text, images, links and form fields underneath are gone, not just covered. Unmarked pages stay as they are.
 - **Save** without carrying over the source's metadata (author, software, dates).
 - Works **offline** once loaded, installable as an app.
 - **Agent-friendly**: drive it with `window.filecairn` (see [`llms.txt`](llms.txt)).
 
-Coming next: fill & sign.
+
 
 ## Privacy
 Everything happens on your device. The page's Content Security Policy only allows it to load its own files, so documents can't be sent anywhere. Scripts embedded in PDFs are never run.
@@ -29,9 +30,9 @@ Plain ES modules, no build step.
 npm install            # dev only: pdf-lib for test fixtures, puppeteer-core for browser tests
 npm start              # http://localhost:8080
 npm test               # unit tests (page model, ranges, zip)
-CHROME=/path/to/chrome URL=http://localhost:8080/ node tests/e2e/smoke.mjs   # also tests/e2e/redact.mjs and annotate.mjs
+CHROME=/path/to/chrome URL=http://localhost:8080/ node tests/e2e/smoke.mjs   # also redact.mjs, annotate.mjs and sign.mjs
 ```
-- `js/pages.js`: the page list model (pure, unit-tested). `js/engine.js`: loading, rendering (PDF.js) and building PDFs (pdf-lib). `js/main.js`: the UI. `js/api.js`: `window.filecairn`. `js/zip.js`: tiny ZIP writer. `js/redact.js`: text search to boxes (pure, unit-tested). `js/annots.js`: annotation model and drawing. `js/pageview.js`: the page editor (annotate + redact). `js/history.js`: History panel and the sidebar divider.
+- `js/pages.js`: the page list model (pure, unit-tested). `js/engine.js`: loading, rendering (PDF.js) and building PDFs (pdf-lib). `js/main.js`: the UI. `js/api.js`: `window.filecairn`. `js/zip.js`: tiny ZIP writer. `js/redact.js`: text search to boxes (pure, unit-tested). `js/annots.js`: annotation model and drawing. `js/pageview.js`: the page editor (annotate + redact). `js/history.js`: History panel and the sidebar divider. `js/forms.js`: form fields and filling. `js/sign.js`: the signature dialog.
 - Deployed on Cloudflare Pages: build command `sh build.sh`, output `dist`.
 
 ## License

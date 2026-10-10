@@ -84,5 +84,8 @@ export const addMarks = (pages, byId) => pages.map((p) => (byId.has(p.id) ? { ..
 /** Remove all marks from the pages with these ids (all pages if ids is null). */
 export const clearMarks = (pages, ids = null) => pages.map((p) => (p.marks && (!ids || ids.has(p.id)) ? { ...p, marks: undefined } : p));
 
+/** Replace one page's form answers ({ fieldName: value }). */
+export const setFields = (pages, id, fields) => pages.map((p) => (p.id === id ? { ...p, fields } : p));
+
 /** Replace one page's annotations. */
 export const setAnnots = (pages, id, annots) => pages.map((p) => (p.id === id ? { ...p, annots: annots.length ? annots : undefined } : p));

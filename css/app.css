@@ -214,3 +214,38 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .cpop .custom-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .cpop input[type=color] { width: 32px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
 @media (max-width: 760px) { .cwell { margin: 0 0 0 2px; } }
+
+/* Form fields (Fill form tool) */
+.rfields { position: absolute; inset: 0; pointer-events: none; line-height: normal; }
+.rfields .ff { position: absolute; margin: 0; box-sizing: border-box; border: 1px solid rgba(15,84,104,.35); background: rgba(201,229,238,.55); color: #111; border-radius: 2px; padding: 0 4px; font-family: Helvetica, Arial, sans-serif; }
+.rfields textarea.ff { padding: 3px 4px; resize: none; line-height: 1.25; }
+.rfields .ff-check, .rfields .ff-radio { padding: 0; accent-color: var(--accent); }
+.rfields.active { pointer-events: auto; }
+.rfields.active .ff:focus { outline: 2px solid var(--accent); background: rgba(255,255,255,.95); }
+.rfields:not(.active) .ff { border-color: transparent; background: transparent; }
+.rpagebox[data-tool=form] { cursor: default; }
+.rpagebox[data-tool=sign] { cursor: copy; }
+
+/* Sign tool panel */
+.signbox { display: flex; flex-direction: column; gap: 8px; }
+.signbox h3 { margin: 6px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.signrow { display: flex; gap: 8px; align-items: stretch; }
+.signrow .col { display: flex; flex-direction: column; gap: 6px; }
+.signthumb { flex: 1; min-height: 64px; background: #fff; border: 1px dashed var(--line); padding: 6px; }
+.signthumb img { max-width: 100%; max-height: 52px; }
+.signthumb.on, .signbox button.on { border-color: var(--accent); outline: 2px solid var(--accent); }
+.signbox select { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--bg); }
+.signbox .placing { margin: 0; color: var(--accent); font-weight: 600; font-size: 13px; }
+
+/* Signature dialog */
+.signdlg { max-width: min(560px, 94vw); width: 100%; }
+.signdlg .tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.signdlg .pad { width: 100%; aspect-ratio: 3; background: #fff; border: 1px solid var(--line); border-radius: 10px; touch-action: none; cursor: crosshair; }
+.signdlg .typed { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); font-size: 16px; }
+.signdlg .typed-preview { min-height: 90px; margin-top: 8px; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: 52px; display: grid; place-items: center; overflow: hidden; white-space: nowrap; }
+.signdlg .up-preview { max-width: 100%; max-height: 120px; display: block; margin-top: 8px; background: #fff; }
+.signdlg .up-preview:not([src]) { display: none; }
+.signdlg .ink { display: flex; align-items: center; gap: 8px; }
+.signdlg .ink .clear { margin-left: auto; }
+.signdlg .sw { width: 26px; height: 26px; padding: 0; border-radius: 50%; }
+.signdlg .sw.on { outline: 2px solid var(--accent); outline-offset: 2px; }

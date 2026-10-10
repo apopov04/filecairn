@@ -7,6 +7,7 @@
 //   { type: "line" | "arrow", color, width, from: [x, y], to: [x, y] }
 //   { type: "text", color, size, x, y, text, rot, font, bold, italic }   (x, y = top-left; rot = page rotation when typed; font: sans|serif|mono)
 //   { type: "note", color, x, y, text }                 (a sticky note / comment)
+//   { type: "image", x, y, w, h, src, rot }             (a signature or initials: PNG data URL; x, y = top-left)
 
 import { indexText, boxesFor } from "./redact.js";
 
@@ -25,6 +26,7 @@ export function bbox(a) {
     case "line": case "arrow": return [Math.min(a.from[0], a.to[0]), Math.min(a.from[1], a.to[1]), Math.max(a.from[0], a.to[0]), Math.max(a.from[1], a.to[1])];
     case "text": { const w = a.w ?? textWidth(a), h = textHeight(a); return textBox(a, w, h); }
     case "note": return [a.x, a.y - 18, a.x + 18, a.y];
+    case "image": return textBox(a, a.w, a.h);
   }
   return [0, 0, 0, 0];
 }
@@ -42,6 +44,22 @@ function textBox(a, w, h) {
   const xs = [a.x, a.x + right[0] * w, a.x + down[0] * h, a.x + right[0] * w + down[0] * h];
   const ys = [a.y, a.y + right[1] * w, a.y + down[1] * h, a.y + right[1] * w + down[1] * h];
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/** The screen-space corners of an image annotation (for its resize handle): user-space point for the bottom-right corner as seen on screen. */
+export function imageCorner(a) {
+  const r = ((a.rot || 0) % 360 + 360) % 360;
+  const right = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] }[r], down = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] }[r];
+  return [a.x + right[0] * a.w + down[0] * a.h, a.y + right[1] * a.w + down[1] * a.h];
+}
+
+// Decoded images for image annotations, shared by every canvas that draws them.
+const images = new Map(), imageListeners = new Set();
+export const onImageLoad = (fn) => imageListeners.add(fn);
+function imageFor(src) {
+  let img = images.get(src);
+  if (!img) { img = new Image(); img.onload = () => imageListeners.forEach((fn) => fn()); img.src = src; images.set(src, img); }
+  return img;
 }
 
 /** Index of the topmost annotation at user-space point (x, y), or -1. tol in points. */
@@ -140,6 +158,14 @@ export function drawAnnots(ctx, vp, annots, selected = -1, skip = null) {
         ctx.translate(x, y); ctx.rotate(((pageRot - (an.rot || 0)) * Math.PI) / 180);
         ctx.font = cssFont(an, an.size * k); ctx.textBaseline = "top";
         lines(an).forEach((l, j) => ctx.fillText(l, 0, j * an.size * 1.2 * k));
+        break;
+      }
+      case "image": {
+        const img = imageFor(an.src);
+        if (!img.complete || !img.naturalWidth) break;
+        const [x, y] = P(an.x, an.y), pageRot = Math.round((Math.atan2(b, a) * 180) / Math.PI);
+        ctx.translate(x, y); ctx.rotate(((pageRot - (an.rot || 0)) * Math.PI) / 180);
+        ctx.drawImage(img, 0, 0, an.w * k, an.h * k);
         break;
       }
       case "note": {

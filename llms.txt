@@ -2,14 +2,15 @@
 
 > Filecairn is a free, private PDF editor that runs entirely in the browser at https://filecairn.silicairn.com. No account, no ads, and files are never uploaded: everything happens on the user's device. Part of the Silicairn suite, alongside Photocairn (https://photocairn.silicairn.com). Open source (MIT): https://github.com/apopov04/filecairn
 
-## What it does (v0.3)
+## What it does (v0.4)
 - Open PDFs, JPG, PNG and WebP (images become pages). Open several files to merge them.
 - Reorder pages by dragging, rotate, duplicate, delete, insert blank pages.
 - Extract selected pages to a new PDF; split into parts (every N pages or ranges like 1-3, 4-8), downloaded as a ZIP.
 - Annotate: double-click a page (or Annotate) for the page editor: highlight/underline/strikethrough text, pen, rectangle, ellipse, line, arrow, text box, sticky note (keys H U S P R O L A T N; V selects/moves; X redacts). Selecting an annotation lets you restyle it (any colour, width/size slider or exact number, Sans/Serif/Mono, bold, italic). Zoom: + / − / 0 or Ctrl+scroll. Markups are drawn into the page on save; text boxes stay real text; notes become PDF comments.
+- Fill & sign: the Fill form tool (F) puts inputs over PDF form fields; answers are flattened into the saved file. The Sign tool (G) creates a signature or initials (draw, type, or upload a photo), places and resizes it, and adds today's date. Visual signatures only (not certificate-based).
 - Redact for real: double-click a page (or the Redact button) to drag boxes, or search text / presets (emails, phone numbers, long numbers, IBANs) and mark all matches. On save, marked pages are flattened to images with the boxes burned in, so nothing underneath remains in the file; their text can't be selected afterwards.
 - Save the result. Source metadata (author, software, dates) isn't carried over.
-- Works offline once loaded. Coming next: fill & sign.
+- Works offline once loaded. 
 
 ## Keyboard
 Click a page to select (Ctrl/Cmd+click adds, Shift+click selects a range). Ctrl+A select all, Esc select none, Delete removes, R rotates right (Shift+R left), Ctrl+D duplicates, Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+S save, Ctrl+O add files.
@@ -21,5 +22,6 @@ Drive it from the page with `window.filecairn` (call `filecairn.help()` for the 
 - `await filecairn.movePages([3, 4], 1)`, `deletePages([2])`, `rotatePages([1], 90)`, `duplicatePages([1])`, `insertBlank(2)`
 - Redaction: `await filecairn.markText("John Smith")` or `markText({ preset: "email" })` (also phone, number, iban); `markArea(page, [x1, y1, x2, y2])` in PDF points from the page's bottom-left; `clearMarks()`. Marks are burned in by exportPdf/save.
 - Annotations: `await filecairn.addAnnotation(2, { type: "highlight", rects: [[x1, y1, x2, y2]] })`, also underline/strike/ink/rect/ellipse/line/arrow/text/note (see `filecairn.help()`); `info().pages[n].annotations`; `clearAnnotations()`.
+- Forms: `await filecairn.formFields(1)`, `fillField(1, "name", "Jane")` (checkbox: true/false; radio/dropdown: option value). Signatures: `addAnnotation(page, { type: "image", x, y, w, h, src: "data:image/png;base64,..." })` (x, y = top-left in PDF points).
 - `await filecairn.exportPdf({ pages: [1, 2], as: "dataurl" })` returns the PDF without downloading; `save()` downloads it.
 Privacy: editing runs locally, but whatever AI is driving the browser can see the document.
