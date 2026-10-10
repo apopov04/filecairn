@@ -160,13 +160,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 @media (max-width: 760px) { .zoom { margin-left: auto; } }
 
 /* Editor: tool rail (left) and sidebar with tool options + History (right) */
-.rrail { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px; border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; scrollbar-width: thin; width: 72px; }
-.rrail .tool { flex-direction: column; gap: 2px; border: 0; background: transparent; padding: 6px 2px 5px; font-size: 10.5px; line-height: 1.15; color: var(--muted); border-radius: 9px; }
-.rrail .tool span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rrail { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.rrail .tool { width: 40px; height: 38px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: 8px; flex: none; }
 .rrail .tool:hover { color: var(--text); }
 .rrail .tool.on { background: var(--surface-2); color: var(--accent); }
 .rrail .tool.on svg { color: var(--accent); }
-.rrail .rsep { height: 1px; background: var(--line); margin: 4px 6px; flex: none; }
+.rrail .rsep { width: 26px; height: 1px; background: var(--line); margin: 4px 0; flex: none; }
 .rside { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
 .rside-tabs { display: none; }
 .history-dock { flex: 0 1 auto; height: 32%; min-height: 72px; display: flex; flex-direction: column; overflow: hidden; }
@@ -190,8 +189,8 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 @media (max-width: 760px) {
   .rbody { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) 38vh; }
   .rrail { flex-direction: row; width: auto; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; padding: 4px; }
-  .rrail .tool { flex: 0 0 58px; }
-  .rrail .rsep { width: 1px; height: auto; margin: 6px 3px; }
+  .rrail .tool { flex: 0 0 40px; }
+  .rrail .rsep { width: 1px; height: 26px; margin: 0 4px; }
   .rside { border-left: 0; border-top: 1px solid var(--line); }
   .rside-tabs { display: flex; gap: 6px; padding: 8px 12px 0; }
   .rside-tabs button { flex: 1; padding: 6px; }
