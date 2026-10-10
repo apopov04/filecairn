@@ -52,7 +52,11 @@ export function createPageView(ctx) {
       <span class="zoom"><button class="icon" data-a="zout" title="Zoom out (−)" aria-label="Zoom out">${ph("magnifying-glass-minus")}</button><button class="zlabel" data-a="zfit" title="Fit to screen (0)" aria-label="Fit to screen">100%</button><button class="icon" data-a="zin" title="Zoom in (+)" aria-label="Zoom in">${ph("magnifying-glass-plus")}</button></span>
     </div>
     <div class="rbody">
-      <nav class="rrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">${TOOLS.map((t, i) => `${i === 1 || i === 5 || i === 10 ? '<span class="rsep"></span>' : ""}<button class="tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}</button>`).join("")}</nav>
+      <nav class="rrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">${TOOLS.map((t, i) => `${i === 1 || i === 5 || i === 10 ? '<span class="rsep"></span>' : ""}<button class="tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}</button>`).join("")}
+        <span class="rsep"></span>
+        <button class="cwell" title="Color (click to change)" aria-label="Color" aria-haspopup="dialog" aria-expanded="false"><span></span></button>
+      </nav>
+      <div class="cpop" role="dialog" aria-label="Choose a color" hidden></div>
       <div class="rstage"><div class="rpagebox"></div></div>
       <aside class="rside" data-tab="tool">
         <div class="rside-tabs" role="tablist" aria-label="Sidebar"><button role="tab" data-tab="tool" aria-selected="true">Tool</button><button role="tab" data-tab="history" aria-selected="false">History</button></div>
@@ -174,10 +178,6 @@ export function createPageView(ctx) {
     box.dataset.tool = opt.tool;
     const kt = TOOLS.find((x) => x.id === k);
     const parts = [tgt ? `<h2>Selected ${kt.label.toLowerCase()}</h2><p class="hint">Changes below apply to it. Drag to move, Delete removes${["text", "note"].includes(k) ? ", double-click to edit the text" : ""}.</p>` : `<h2>${t.label}</h2><p class="hint">${t.hint}</p>`];
-    if (k !== "select" && k !== "redact") {
-      const colors = k === "highlight" ? COLORS.highlight : k === "note" ? COLORS.note : COLORS.ink, cur = val("color");
-      parts.push(`<div class="swatches" role="radiogroup" aria-label="Color">${colors.map((c) => `<button class="sw${cur === c ? " on" : ""}" role="radio" aria-checked="${cur === c}" aria-label="Color ${c}" data-color="${c}" style="background:${c}"></button>`).join("")}<label class="sw custom${colors.includes(cur) ? "" : " on"}" title="Custom color" style="--c:${cur}"><input type="color" data-prop="color" value="${cur}" aria-label="Custom color"></label></div>`);
-    }
     if (["ink", "rect", "ellipse", "line", "arrow"].includes(k)) parts.push(slider("width", "Line width", 0.5, 20, 0.5, "pt"));
     if (k === "text") {
       parts.push(slider("size", "Text size", 6, 96, 1, "pt"));
@@ -191,9 +191,41 @@ export function createPageView(ctx) {
       parts.push(`<p class="note">When you save, highlights, drawings, shapes and text are added to the page so they look the same in every PDF viewer. Highlights on text go underneath it, so the text keeps its color. Sticky notes become comments you can open in Acrobat, Preview and others.</p>`);
     } else parts.push(redactPanel());
     panel.innerHTML = parts.join("");
+    updateWell();
     const q = panel.querySelector("#r-q"); if (q && lastQuery) q.value = lastQuery;
     const dpi = panel.querySelector("#r-dpi"); if (dpi) dpi.value = String(S.dpi);
   }
+
+  // The color well in the left rail: shows the color of the selected annotation
+  // (or the current tool) and opens a palette with a custom picker.
+  const well = $(".cwell"), pop = $(".cpop");
+  const hasColor = () => !["select", "redact"].includes(kind());
+  function updateWell() {
+    const on = hasColor();
+    well.disabled = !on;
+    well.firstElementChild.style.background = on ? val("color") : "transparent";
+    well.title = on ? `Color: ${val("color")} (click to change)` : "Pick a drawing tool, or select an annotation, to choose its color";
+    if (!on) closePop();
+  }
+  function openPop() {
+    const k = kind(), cur = val("color"), colors = k === "highlight" ? COLORS.highlight : k === "note" ? COLORS.note : COLORS.ink;
+    pop.innerHTML = `<div class="swatches">${colors.map((c) => `<button class="sw${cur === c ? " on" : ""}" aria-label="Color ${c}" aria-pressed="${cur === c}" data-color="${c}" style="background:${c}"></button>`).join("")}</div>
+      <label class="custom-row"><input type="color" value="${cur}" aria-label="Custom color"> Custom color</label>`;
+    const r = well.getBoundingClientRect(), host = el.getBoundingClientRect();
+    // Beside the rail on desktop; below the button when the rail is a top strip (phones).
+    const side = r.right - host.left + 8 + 196 <= host.width;
+    pop.style.left = `${side ? r.right - host.left + 8 : Math.max(8, Math.min(r.left - host.left, host.width - 204))}px`;
+    pop.style.top = `${side ? Math.max(8, r.bottom - host.top - 120) : r.bottom - host.top + 6}px`;
+    pop.hidden = false; well.setAttribute("aria-expanded", "true");
+    pop.querySelector(".sw.on, .sw")?.focus();
+  }
+  function closePop() { if (pop.hidden) return; pop.hidden = true; well.setAttribute("aria-expanded", "false"); }
+  well.addEventListener("click", () => (pop.hidden ? openPop() : closePop()));
+  pop.addEventListener("click", (e) => { const b = e.target.closest("[data-color]"); if (b) { setProp("color", b.dataset.color, true); closePop(); renderPanel(); } });
+  pop.addEventListener("input", (e) => { if (e.target.type === "color") { setProp("color", e.target.value, false); well.firstElementChild.style.background = e.target.value; } });
+  pop.addEventListener("change", (e) => { if (e.target.type === "color") { setProp("color", e.target.value, true); renderPanel(); } });
+  pop.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closePop(); well.focus(); } });
+  document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && !well.contains(e.target)) closePop(); }, true);
 
   // Apply a style change: to the selected annotation (live while dragging, committed on change) and to the defaults.
   function setProp(prop, value, final) {
@@ -249,7 +281,6 @@ export function createPageView(ctx) {
   panel.addEventListener("click", (e) => {
     const t = e.target.closest("button"); if (!t) return;
     if (t.dataset.preset) return search(PRESETS[t.dataset.preset].re, PRESETS[t.dataset.preset].label.toLowerCase());
-    if (t.dataset.color) { setProp("color", t.dataset.color, true); return renderPanel(); }
     if (t.dataset.font) { setProp("font", t.dataset.font, true); return renderPanel(); }
     if (t.dataset.toggle) { setProp(t.dataset.toggle, !val(t.dataset.toggle), true); return renderPanel(); }
   });

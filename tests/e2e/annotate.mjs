@@ -114,7 +114,12 @@ if (W >= 700) {
 // Restyle the selected text box: custom color, size via the number field, serif + bold.
 await page.mouse.click(...await at(70, 772)); await sleep(150); // select "Hello Filecairn"
 check("clicking text selects it and the panel edits it", (await page.evaluate(() => document.querySelector(".rpanel h2").textContent)) === "Selected text box", await page.evaluate(() => document.querySelector(".rpanel h2").textContent));
-await page.evaluate(() => { const c = document.querySelector('.rpanel input[type=color]'); c.value = "#123456"; c.dispatchEvent(new Event("input", { bubbles: true })); c.dispatchEvent(new Event("change", { bubbles: true })); });
+// Color comes from the well in the left rail (not the panel).
+check("the panel has no color row", !(await page.evaluate(() => document.querySelector(".rpanel .swatches, .rpanel input[type=color]"))), null);
+await page.click(".cwell"); await sleep(150);
+check("the rail color well opens a palette showing the selected text's color", await page.evaluate(() => !document.querySelector(".cpop").hidden && !!document.querySelector(".cpop .sw")), null);
+await shot("A1c-color-pop");
+await page.evaluate(() => { const c = document.querySelector('.cpop input[type=color]'); c.value = "#123456"; c.dispatchEvent(new Event("input", { bubbles: true })); c.dispatchEvent(new Event("change", { bubbles: true })); });
 await page.evaluate(() => { const n = document.querySelector('.rpanel input[type=number][data-prop=size]'); n.value = "28"; n.dispatchEvent(new Event("input", { bubbles: true })); n.dispatchEvent(new Event("change", { bubbles: true })); });
 await page.evaluate(() => document.querySelector('.rpanel [data-font=serif]').click());
 await page.evaluate(() => document.querySelector('.rpanel [data-toggle=bold]').click());
