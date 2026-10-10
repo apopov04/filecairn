@@ -45,7 +45,7 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     throw new Error("open() takes File/Blob objects or data: URLs. (Fetching other websites is blocked by Filecairn's privacy policy.)");
   };
   const api = {
-    version: "0.4.0", apiVersion: 1,
+    version: "1.0.0", apiVersion: 1,
     help: () => METHODS.map(([sig, desc]) => ({ sig, desc })),
     async open(files) {
       const list = await Promise.all((Array.isArray(files) ? files : [files]).map(toFile));

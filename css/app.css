@@ -263,3 +263,12 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .fpop .fitem.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-weight: 600; }
 .fpop .factions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--line); }
 .fpop .factions button { font-size: 12px; padding: 5px 9px; }
+
+/* Help dialog */
+.helpdlg { max-width: min(560px, 94vw); width: 100%; max-height: 90dvh; overflow: auto; }
+.helpdlg h3 { margin: 8px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.helpdlg dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0; font-size: 13px; }
+.helpdlg dt { color: var(--text); }
+.helpdlg dd { margin: 0; color: var(--muted); text-align: right; }
+.helpdlg kbd { font: 12px var(--font); padding: 1px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); color: var(--text); }
+dialog p { margin: 0; font-size: 14px; line-height: 1.5; }

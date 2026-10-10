@@ -1,0 +1,34 @@
+// Redaction save check + help dialog.
+//   CHROME=/path/to/chrome URL=http://localhost:8090/ node tests/e2e/finish.mjs
+import puppeteer from "puppeteer-core";
+import fs from "fs";
+const URL_ = process.env.URL || "http://localhost:8090/";
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 800 });
+const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+await page.goto(URL_, { waitUntil: "networkidle0" });
+let failed = 0; const check = (n, ok, got) => { console.log(`${ok ? "ok  " : "FAIL"} ${n}${ok ? "" : ` (got ${JSON.stringify(got)})`}`); if (!ok) failed++; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+await page.evaluate((s) => filecairn.open(`data:application/pdf;base64,${s}`), fs.readFileSync(new URL("../fixtures/sample.pdf", import.meta.url)).toString("base64"));
+await page.evaluate(() => filecairn.markText({ preset: "email" }));
+const dl = "/tmp/fc-dl2"; fs.rmSync(dl, { recursive: true, force: true }); fs.mkdirSync(dl, { recursive: true });
+const cdp = await page.createCDPSession(); await cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: dl });
+await page.click("#btn-save"); await sleep(300);
+const txt = await page.evaluate(() => document.querySelector("dialog[open]")?.textContent || "");
+check("Save asks before applying redactions", txt.includes("Apply 1 redaction") && txt.includes("2"), txt.slice(0, 120));
+await page.screenshot({ path: new URL("./shots/X1-redact-check.png", import.meta.url).pathname });
+await page.evaluate(() => [...document.querySelectorAll("dialog[open] button")].find((b) => b.value === "review").click()); await sleep(400);
+check("Review opens the marked page in the Redact tool", await page.evaluate(() => !document.querySelector(".rview").hidden && document.querySelector(".rpage").textContent.startsWith("Page 2") && document.querySelector('.rrail [data-tool=redact]').classList.contains("on")), null);
+check("nothing was downloaded yet", fs.readdirSync(dl).length === 0, fs.readdirSync(dl));
+await page.click("#btn-save"); await sleep(300);
+await page.evaluate(() => [...document.querySelectorAll("dialog[open] button")].find((b) => b.value === "ok").click()); await sleep(1500);
+check("Save with redactions downloads the PDF", fs.readdirSync(dl).some((f) => f.endsWith(".pdf")), fs.readdirSync(dl));
+await page.keyboard.press("Escape"); await page.keyboard.press("Escape"); await sleep(200);
+await page.keyboard.type("?"); await sleep(300);
+const help = await page.evaluate(() => [...document.querySelectorAll("dialog.helpdlg[open] h3")].map((h) => h.textContent));
+check("? opens help with Pages, Editor tools and Everywhere", help.join() === "Pages,Editor tools,Everywhere", help);
+await page.screenshot({ path: new URL("./shots/X2-help.png", import.meta.url).pathname });
+await page.evaluate(() => document.querySelector("dialog.helpdlg button.primary").click()); await sleep(200);
+check("help button in the top bar opens it too", await page.evaluate(() => { document.querySelector("#btn-help").click(); return !!document.querySelector("dialog.helpdlg[open]"); }), null);
+check("no page errors", !errors.length, errors);
+await browser.close(); console.log(failed ? `${failed} failed` : "all passed"); process.exit(failed ? 1 : 0);

@@ -5,7 +5,7 @@
 
 Part of the Silicairn suite, alongside [Photocairn](https://photocairn.silicairn.com/) (photo editor).
 
-## Features (v0.4)
+## Features (v1.0)
 - **Open** PDFs, JPG, PNG and WebP (images become pages). Drop, pick or paste files; open several to **merge** them.
 - **Organise pages**: drag to reorder (several at once), rotate, duplicate, delete, insert blank pages. Undo/redo for everything.
 - **Extract** selected pages to a new PDF, or **split** into parts (every N pages, or ranges like `1-3, 4-8, 9-`), downloaded as one ZIP.

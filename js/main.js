@@ -211,6 +211,7 @@ const ACTIONS = {
   extract: async () => {
     if (!needSel("extract")) return;
     const pages = S.pages.filter((p) => S.sel.has(p.id));
+    if (!(await confirmRedactions(pages))) return;
     await download(await busy("Extracting", () => buildPdf(S.sources, pages, { dpi: S.dpi })), `${docName()}-pages.pdf`, "application/pdf");
   },
   split: () => openSplit(),
@@ -361,8 +362,33 @@ async function download(bytes, name, type) {
   toast(`Saved ${name}`);
 }
 
+/**
+ * Redaction can't be undone once the file is out: before saving pages with
+ * marks, say what will happen and offer to review them.
+ */
+function confirmRedactions(pages) {
+  const marked = pages.filter((p) => p.marks?.length);
+  if (!marked.length) return Promise.resolve(true);
+  const n = marked.reduce((k, p) => k + p.marks.length, 0), nums = marked.map((p) => S.pages.indexOf(p) + 1);
+  return new Promise((resolve) => {
+    const d = document.createElement("dialog");
+    d.innerHTML = `<form method="dialog" class="dlg"><h2>Apply ${n} redaction${n === 1 ? "" : "s"}?</h2>
+      <p>${marked.length === 1 ? "Page" : "Pages"} <b>${nums.join(", ")}</b> will be flattened with the black boxes burned in. What's underneath is removed for good, and the text on ${marked.length === 1 ? "that page" : "those pages"} can't be selected or searched afterwards.</p>
+      <p class="hint">Your work in Filecairn isn't changed; this only affects the file you save.</p>
+      <div class="row-end"><button value="review">Review marks</button><button value="cancel">Cancel</button><button class="primary" value="ok">Save with redactions</button></div></form>`;
+    document.body.append(d);
+    d.addEventListener("close", () => {
+      d.remove();
+      if (d.returnValue === "review") rview.open(marked[0].id, "redact");
+      resolve(d.returnValue === "ok");
+    });
+    d.showModal();
+  });
+}
+
 async function save() {
   if (!S.pages.length) return;
+  if (!(await confirmRedactions(S.pages))) return;
   try { await download(await busy("Saving", () => buildPdf(S.sources, S.pages, { dpi: S.dpi })), `${docName()}.pdf`, "application/pdf"); }
   catch (e) { toast(`Couldn't save: ${e.message}`, 5000); }
 }
@@ -382,6 +408,7 @@ dlg.addEventListener("close", async () => {
     groups = mode === "every" ? P.chunks(n, +$("#split-every").value || 1) : P.parseRanges($("#split-ranges").value, n);
   } catch (e) { $("#split-err").textContent = e.message; dlg.showModal(); return; }
   if (groups.length === 1 && groups[0].length === n) return toast("That would make one file with every page. Pick smaller parts.");
+  if (!(await confirmRedactions(groups.flat().map((k) => S.pages[k])))) return;
   try {
     const files = await busy("Splitting", async () => {
       const out = [], pad = String(groups.length).length;
@@ -398,6 +425,23 @@ dlg.addEventListener("close", async () => {
 // Typing in a field picks its option.
 $("#split-every").addEventListener("focus", () => { dlg.querySelector("input[value=every]").checked = true; });
 $("#split-ranges").addEventListener("focus", () => { dlg.querySelector("input[value=ranges]").checked = true; });
+
+/* ----------------------------------- help ----------------------------------- */
+
+const HELP = [
+  ["Pages", [["Select pages", "Click · Ctrl+click to add · Shift+click for a range"], ["Select all / none", "Ctrl+A / Esc"], ["Reorder", "Drag pages (hold on touch screens)"], ["Rotate right / left", "R / Shift+R"], ["Duplicate / delete", "Ctrl+D / Delete"], ["Open a page in the editor", "Double-click it"]]],
+  ["Editor tools", [["Select & move", "V"], ["Highlight / underline / strikethrough", "H / U / S"], ["Redact", "X"], ["Pen / rectangle / ellipse", "P / R / O"], ["Line / arrow", "L / A"], ["Text box / sticky note", "T / N"], ["Fill form / sign", "F / G"], ["Previous / next page", "← / →"], ["Zoom in / out / fit", "+ / − / 0 (or Ctrl+scroll)"], ["Delete the selected item", "Delete"]]],
+  ["Everywhere", [["Undo / redo", "Ctrl+Z / Ctrl+Shift+Z"], ["Save", "Ctrl+S"], ["Add files", "Ctrl+O"], ["This help", "?"]]],
+];
+function showHelp() {
+  const d = document.createElement("dialog"); d.className = "helpdlg";
+  d.innerHTML = `<form method="dialog" class="dlg"><h2>Keyboard shortcuts & help</h2>
+    ${HELP.map(([t, rows]) => `<h3>${t}</h3><dl>${rows.map(([a, k]) => `<dt>${a}</dt><dd>${k.replace(/([A-Za-z]+\+[^ ·/]+|\b[A-Z]\b|Delete|Esc|←|→|\+|−|0|\?)/g, "<kbd>$1</kbd>")}</dd>`).join("")}</dl>`).join("")}
+    <p class="hint">Everything happens on your device; nothing is uploaded. Ctrl means Cmd on a Mac. <a href="https://github.com/apopov04/filecairn" target="_blank" rel="noopener">Source code</a> · <a href="llms.txt" target="_blank">For AI agents</a></p>
+    <div class="row-end"><button class="primary" value="ok">Close</button></div></form>`;
+  document.body.append(d); d.addEventListener("close", () => d.remove()); d.showModal();
+}
+$("#btn-help").innerHTML = ph("question"); $("#btn-help").onclick = showHelp;
 
 /* ------------------------------ ui odds & ends ------------------------------ */
 
@@ -429,6 +473,7 @@ addEventListener("keydown", (e) => {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (rview.isOpen && !mod && rview.keydown(e)) { e.preventDefault(); return; }
   if (mod && k === "o") { e.preventDefault(); return pick(S.pages.length ? insertPos() : null); }
+  if (e.key === "?" && !e.target.closest?.("input, textarea, select, dialog")) { e.preventDefault(); return showHelp(); }
   if (e.target.closest?.("input, textarea, dialog")) return;
   if (!S.pages.length) return;
   if (mod && k === "z") { e.preventDefault(); return e.shiftKey ? redo() : undo(); }

@@ -2,7 +2,7 @@
 
 > Filecairn is a free, private PDF editor that runs entirely in the browser at https://filecairn.silicairn.com. No account, no ads, and files are never uploaded: everything happens on the user's device. Part of the Silicairn suite, alongside Photocairn (https://photocairn.silicairn.com). Open source (MIT): https://github.com/apopov04/filecairn
 
-## What it does (v0.4)
+## What it does (v1.0)
 - Open PDFs, JPG, PNG and WebP (images become pages). Open several files to merge them.
 - Reorder pages by dragging, rotate, duplicate, delete, insert blank pages.
 - Extract selected pages to a new PDF; split into parts (every N pages or ranges like 1-3, 4-8), downloaded as a ZIP.
