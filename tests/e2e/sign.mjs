@@ -55,8 +55,13 @@ const pad = await page.evaluate(() => { const r = document.querySelector(".signd
 await page.mouse.move(pad.x + pad.w * 0.15, pad.y + pad.h * 0.6); await page.mouse.down();
 for (let i = 1; i <= 20; i++) await page.mouse.move(pad.x + pad.w * (0.15 + i * 0.035), pad.y + pad.h * (0.6 - 0.25 * Math.sin(i / 2)));
 await page.mouse.up();
+// Any ink color from the picker circle.
+await page.evaluate(() => { const i = document.querySelector(".signdlg .inkpick"); i.value = "#c0392b"; i.dispatchEvent(new Event("input", { bubbles: true })); });
+check("ink picker circle selects a custom color", await page.evaluate(() => document.querySelector(".signdlg .ink .custom").classList.contains("on") && !document.querySelector(".signdlg [data-ink].on")), null);
 await shot("F2-sign-dialog");
 await page.click(".signdlg button.primary"); await sleep(300);
+const red = await page.evaluate(async () => { const u = JSON.parse(localStorage.getItem("fc-sign") || "{}").signature; const i = new Image(); i.src = u; await i.decode(); const c = document.createElement("canvas"); c.width = i.width; c.height = i.height; const g = c.getContext("2d"); g.drawImage(i, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0, r = 0; for (let k = 0; k < d.length; k += 4) if (d[k + 3] > 200) { n++; if (d[k] > 150 && d[k + 1] < 90 && d[k + 2] < 90) r++; } return { n, r }; });
+check("signature is drawn in the custom ink color", red.n > 50 && red.r / red.n > 0.8, red);
 check("signature saved in this browser", await page.evaluate(() => !!JSON.parse(localStorage.getItem("fc-sign") || "{}").signature), null);
 check("ready to place", (await page.evaluate(() => document.querySelector(".rpanel .placing")?.textContent || "")).includes("Click on the page"), null);
 await page.mouse.click(...await at(330, 315)); await sleep(200);

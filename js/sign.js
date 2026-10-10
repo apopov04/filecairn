@@ -56,7 +56,7 @@ export function createSignature(kind = "signature") {
         <div class="pane" data-pane="draw"><canvas class="pad" width="900" height="300" aria-label="Draw your ${kind} here"></canvas><p class="hint">Draw with your mouse, trackpad or finger.</p></div>
         <div class="pane" data-pane="type" hidden><input type="text" class="typed" placeholder="Type your ${kind === "initials" ? "initials" : "name"}" autocomplete="name"><div class="typed-preview" aria-hidden="true"></div></div>
         <div class="pane" data-pane="upload" hidden><input type="file" accept="image/*" class="upfile"><p class="hint">A photo or scan of your ${kind} on white paper. The paper is removed automatically.</p><img class="up-preview" alt=""></div>
-        <div class="row ink"><span>Ink</span>${["#1d1d1f", "#1a3fa0"].map((c, i) => `<button type="button" class="sw${i ? "" : " on"}" data-ink="${c}" aria-label="${i ? "Blue" : "Black"} ink" style="background:${c}"></button>`).join("")}<button type="button" class="clear">Clear</button></div>
+        <div class="row ink"><span>Ink</span>${["#1d1d1f", "#1a3fa0"].map((c, i) => `<button type="button" class="sw${i ? "" : " on"}" data-ink="${c}" aria-label="${i ? "Blue" : "Black"} ink" style="background:${c}"></button>`).join("")}<label class="sw custom" title="Any color" style="--c:#1d1d1f"><input type="color" class="inkpick" value="#1d1d1f" aria-label="Choose any ink color"></label><button type="button" class="clear">Clear</button></div>
         <label class="checkbox"><input type="checkbox" class="remember" checked> Remember on this device (stays in your browser, never uploaded)</label>
         <div class="row-end"><button value="cancel" formnovalidate>Cancel</button><button class="primary" value="ok">Use ${kind}</button></div>
       </form>`;
@@ -83,11 +83,19 @@ export function createSignature(kind = "signature") {
     const showTyped = () => { prev.textContent = typed.value || ""; prev.style.color = ink; };
     typed.addEventListener("input", showTyped);
     $(".upfile").addEventListener("change", async (e) => { const f = e.target.files[0]; if (!f) return; uploaded = await fromPhoto(f, ink).catch(() => null); $(".up-preview").src = uploaded || ""; });
+    const setInk = (c, btn) => {
+      ink = c;
+      dlg.querySelectorAll("[data-ink], .ink .custom").forEach((b) => b.classList.toggle("on", b === btn));
+      redraw(); showTyped();
+      const f = $(".upfile").files[0]; if (f) fromPhoto(f, ink).then((u) => { uploaded = u; $(".up-preview").src = u || ""; });
+    };
+    // Any color from the picker circle.
+    $(".inkpick").addEventListener("input", (e) => { const lbl = e.target.closest(".custom"); lbl.style.setProperty("--c", e.target.value); setInk(e.target.value, lbl); });
     dlg.addEventListener("click", (e) => {
       const t = e.target.closest("[data-tab]");
       if (t) { tab = t.dataset.tab; dlg.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b === t)); dlg.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== tab; }); if (tab === "type") typed.focus(); }
       const i = e.target.closest("[data-ink]");
-      if (i) { ink = i.dataset.ink; dlg.querySelectorAll("[data-ink]").forEach((b) => b.classList.toggle("on", b === i)); redraw(); showTyped(); const f = $(".upfile").files[0]; if (f) fromPhoto(f, ink).then((u) => { uploaded = u; $(".up-preview").src = u || ""; }); }
+      if (i) setInk(i.dataset.ink, i);
       if (e.target.closest(".clear")) { strokes.length = 0; redraw(); typed.value = ""; showTyped(); uploaded = null; $(".upfile").value = ""; $(".up-preview").removeAttribute("src"); }
     });
     dlg.addEventListener("close", async () => {
