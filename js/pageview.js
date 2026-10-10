@@ -15,6 +15,7 @@ const TOOLS = [
   { id: "highlight", icon: "highlighter", label: "Highlight", key: "h", hint: "Drag over text to highlight it. Over pictures or scans, the dragged area is highlighted." },
   { id: "underline", icon: "text-underline", label: "Underline", key: "u", hint: "Drag over text to underline it." },
   { id: "strike", icon: "text-strikethrough", label: "Strikethrough", key: "s", hint: "Drag over text to strike it through." },
+  { id: "redact", icon: "eye-slash", label: "Redact", key: "x", hint: "Drag on the page to black out an area for good, or search below." },
   { id: "ink", icon: "pencil-simple", label: "Pen", key: "p", hint: "Draw freehand." },
   { id: "rect", icon: "rectangle", label: "Rectangle", key: "r", hint: "Drag to draw a rectangle." },
   { id: "ellipse", icon: "circle", label: "Ellipse", key: "o", hint: "Drag to draw an ellipse." },
@@ -22,7 +23,6 @@ const TOOLS = [
   { id: "arrow", icon: "arrow-up-right", label: "Arrow", key: "a", hint: "Drag to draw an arrow." },
   { id: "text", icon: "text-t", label: "Text box", key: "t", hint: "Click where the text should start, then type. Click elsewhere or press Esc when done." },
   { id: "note", icon: "chat-centered-text", label: "Sticky note", key: "n", hint: "Click to place a note and type your comment. It's saved as a real PDF comment." },
-  { id: "redact", icon: "eye-slash", label: "Redact", key: "x", hint: "Drag on the page to black out an area for good, or search below." },
 ];
 const MARKUP = new Set(["highlight", "underline", "strike"]);
 
@@ -52,7 +52,7 @@ export function createPageView(ctx) {
       <span class="zoom"><button class="icon" data-a="zout" title="Zoom out (−)" aria-label="Zoom out">${ph("magnifying-glass-minus")}</button><button class="zlabel" data-a="zfit" title="Fit to screen (0)" aria-label="Fit to screen">100%</button><button class="icon" data-a="zin" title="Zoom in (+)" aria-label="Zoom in">${ph("magnifying-glass-plus")}</button></span>
     </div>
     <div class="rbody">
-      <nav class="rrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">${TOOLS.map((t, i) => `${i === 1 || i === 4 || i === 9 || i === 11 ? '<span class="rsep"></span>' : ""}<button class="tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}</button>`).join("")}</nav>
+      <nav class="rrail" role="toolbar" aria-label="Tools" aria-orientation="vertical">${TOOLS.map((t, i) => `${i === 1 || i === 5 || i === 10 ? '<span class="rsep"></span>' : ""}<button class="tool" data-tool="${t.id}" title="${t.label} (${t.key.toUpperCase()})" aria-label="${t.label}" aria-pressed="false">${ph(t.icon)}</button>`).join("")}</nav>
       <div class="rstage"><div class="rpagebox"></div></div>
       <aside class="rside" data-tab="tool">
         <div class="rside-tabs" role="tablist" aria-label="Sidebar"><button role="tab" data-tab="tool" aria-selected="true">Tool</button><button role="tab" data-tab="history" aria-selected="false">History</button></div>
