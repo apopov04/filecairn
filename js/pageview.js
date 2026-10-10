@@ -6,7 +6,7 @@
 import * as P from "./pages.js";
 import { renderPage, textItems, rectToViewport, toUserSpace } from "./engine.js";
 import { PRESETS, textQuery, findOnPage, normRect } from "./redact.js";
-import { COLORS, drawAnnots, hit, translate, textRects, cssFont, imageCorner, onImageLoad } from "./annots.js";
+import { COLORS, drawAnnots, hit, translate, textRects, cssFont, handles, resized, onImageLoad } from "./annots.js";
 import { fieldsOf } from "./forms.js";
 import { createSignature, savedSigns, saveSign } from "./sign.js";
 import { allFonts, fontName, cssFamily, onFontLoad, openFontPicker, closeFontPicker } from "./fonts.js";
@@ -14,7 +14,7 @@ import { ph } from "./icons.js";
 import { historyPanel, splitter } from "./history.js";
 
 const TOOLS = [
-  { id: "select", icon: "cursor", label: "Select & move", key: "v", hint: "Click an annotation or redaction box to select it; drag to move it. Double-click text or a note to edit. Delete removes." },
+  { id: "select", icon: "cursor", label: "Select & move", key: "v", hint: "Click an annotation or redaction box to select it; drag to move it, or drag its white handles to resize. Double-click text or a note to edit. Delete removes." },
   { id: "highlight", icon: "highlighter", label: "Highlight", key: "h", hint: "Drag over text to highlight it. Over pictures or scans, the dragged area is highlighted." },
   { id: "underline", icon: "text-underline", label: "Underline", key: "u", hint: "Drag over text to underline it." },
   { id: "strike", icon: "text-strikethrough", label: "Strikethrough", key: "s", hint: "Drag over text to strike it through." },
@@ -221,11 +221,12 @@ export function createPageView(ctx) {
     const shown = list.filter((a) => !(editor && a === editor.annot)), isHl = (a) => a.type === "highlight";
     drawAnnots(gh, vp, shown, -1, (a) => !isHl(a));
     drawAnnots(g, vp, shown, sel?.kind === "annot" ? sel.i : -1, isHl);
-    // Resize handle on a selected signature.
+    // Resize handles on the selected annotation.
     const sa = sel?.kind === "annot" ? (live?.i === sel.i ? live.a : drag?.replace === sel.i && drag.preview ? drag.preview : annots()[sel.i]) : null;
-    if (sa?.type === "image") {
-      const [cx, cy] = imageCorner(sa), [a, b, c, d, e, f] = vp.transform, hx = a * cx + c * cy + e, hy = b * cx + d * cy + f, hs = 7 * scale();
-      g.fillStyle = "#fff"; g.strokeStyle = "#0F5468"; g.lineWidth = 2 * scale(); g.fillRect(hx - hs, hy - hs, hs * 2, hs * 2); g.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
+    if (sa && (opt.tool === "select" || (opt.tool === "sign" && sa.type === "image"))) {
+      const [a, b, c, d, e, f] = vp.transform, hs = 6 * scale();
+      g.fillStyle = "#fff"; g.strokeStyle = "#0F5468"; g.lineWidth = 2 * scale(); g.setLineDash([]);
+      for (const [hx0, hy0] of handles(sa)) { const hx = a * hx0 + c * hy0 + e, hy = b * hx0 + d * hy0 + f; g.fillRect(hx - hs, hy - hs, hs * 2, hs * 2); g.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2); }
     }
   }
 
@@ -242,7 +243,7 @@ export function createPageView(ctx) {
     el.querySelectorAll(".tool").forEach((b) => { const on = b.dataset.tool === opt.tool; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
     box.dataset.tool = opt.tool;
     const kt = TOOLS.find((x) => x.id === k) || { label: k === "image" ? "Signature" : k };
-    const parts = [tgt ? `<h2>Selected ${kt.label.toLowerCase()}</h2><p class="hint">Changes below apply to it. Drag to move, Delete removes${["text", "note"].includes(k) ? ", double-click to edit the text" : ""}.</p>` : `<h2>${t.label}</h2><p class="hint">${t.hint}</p>`];
+    const parts = [tgt ? `<h2>Selected ${kt.label.toLowerCase()}</h2><p class="hint">Changes below apply to it. Drag to move, drag a white handle to resize, Delete removes${["text", "note"].includes(k) ? ", double-click to edit the text" : ""}.</p>` : `<h2>${t.label}</h2><p class="hint">${t.hint}</p>`];
     if (["ink", "rect", "ellipse", "line", "arrow"].includes(k)) parts.push(slider("width", "Line width", 0.5, 20, 0.5, "pt"));
     if (k === "text") {
       parts.push(slider("size", "Text size", 6, 96, 1, "pt"));
@@ -423,11 +424,11 @@ export function createPageView(ctx) {
     const [x, y] = toUser(e), tool = opt.tool, color = opt.color[tool];
     box.setPointerCapture(e.pointerId);
     e.preventDefault();
-    // Resize handle of a selected signature (Select and Sign tools).
+    // Resize handles of the selected annotation (Select tool; signatures also with Sign).
     const selA = sel?.kind === "annot" ? annots()[sel.i] : null;
-    if (selA?.type === "image" && (tool === "select" || tool === "sign")) {
-      const [cx, cy] = imageCorner(selA);
-      if (Math.hypot(cx - x, cy - y) <= 9 * ptsPerCss()) { drag = { mode: "resize", x, y, orig: selA, replace: sel.i }; return; }
+    if (selA && (tool === "select" || (tool === "sign" && selA.type === "image"))) {
+      const hi = handles(selA).findIndex(([hx, hy]) => Math.hypot(hx - x, hy - y) <= 9 * ptsPerCss());
+      if (hi >= 0) { drag = { mode: "resize", handle: hi, x, y, orig: selA, replace: sel.i }; return; }
     }
     if (tool === "sign") {
       if (placing) {
@@ -470,11 +471,7 @@ export function createPageView(ctx) {
     const [x, y] = toUser(e), c = opt.color[drag.mode], w = opt.width;
     switch (drag.mode) {
       case "move": drag.preview = translate(drag.orig, x - drag.x, y - drag.y); break;
-      case "resize": { // keep the aspect ratio; scale by how far the corner moved
-        const o = drag.orig, [cx, cy] = imageCorner(o), d0 = Math.hypot(cx - o.x, cy - o.y), d1 = Math.hypot(x - o.x, y - o.y);
-        const f = Math.max(12 / o.w, d1 / (d0 || 1));
-        drag.preview = { ...o, w: o.w * f, h: o.h * f }; break;
-      }
+      case "resize": drag.preview = resized(drag.orig, drag.handle, x, y); break;
       case "movemark": { const dx = x - drag.x, dy = y - drag.y, r = drag.orig; drag.markMove = { i: sel.i, r: [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy] }; break; }
       case "ink": { const p = drag.pts, lx = p[p.length - 2], ly = p[p.length - 1]; if (Math.hypot(x - lx, y - ly) > 0.8 * ptsPerCss()) p.push(x, y); drag.preview = { type: "ink", color: c, width: w, paths: [p.slice()] }; break; }
       case "rect": case "ellipse": drag.preview = { type: drag.mode, color: c, width: w, rect: normRect([drag.x, drag.y, x, y]) }; break;
@@ -488,7 +485,7 @@ export function createPageView(ctx) {
     const d = drag; drag = null;
     if (!d) return;
     const small = (r) => Math.abs(r[2] - r[0]) < 2 * ptsPerCss() || Math.abs(r[3] - r[1]) < 2 * ptsPerCss();
-    if (d.mode === "move" || d.mode === "resize") { if (d.preview) { const list = annots().slice(); list[d.replace] = d.preview; setAnnots(list, d.mode === "resize" ? "resize signature" : "move annotation"); } }
+    if (d.mode === "move" || d.mode === "resize") { if (d.preview) { const list = annots().slice(); list[d.replace] = d.preview; setAnnots(list, d.mode === "resize" ? (d.orig.type === "image" ? "resize signature" : `resize ${TOOLS.find((t) => t.id === d.orig.type)?.label.toLowerCase() || "annotation"}`) : "move annotation"); } }
     else if (d.mode === "movemark") { if (d.markMove) { const list = marks().slice(); list[d.markMove.i] = d.markMove.r; commit(P.setMarks(S.pages, id, list), "move mark"); } }
     else if (d.mode === "redact") { if (d.markRect && !small(d.markRect)) { commit(P.setMarks(S.pages, id, [...marks(), d.markRect]), "mark area"); sel = { kind: "mark", i: marks().length - 1 }; } }
     else if (d.mode === "ink") addAnnot({ type: "ink", color: opt.color.ink, width: opt.width, paths: [d.pts] }, "draw");

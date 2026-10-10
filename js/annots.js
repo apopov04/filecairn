@@ -9,7 +9,7 @@
 //   { type: "note", color, x, y, text }                 (a sticky note / comment)
 //   { type: "image", x, y, w, h, src, rot }             (a signature or initials: PNG data URL; x, y = top-left)
 
-import { indexText, boxesFor } from "./redact.js";
+import { indexText, boxesFor, normRect } from "./redact.js";
 import { cssFamily, ensureFont } from "./fonts.js";
 
 export const COLORS = {
@@ -48,10 +48,53 @@ function textBox(a, w, h) {
 }
 
 /** The screen-space corners of an image annotation (for its resize handle): user-space point for the bottom-right corner as seen on screen. */
-export function imageCorner(a) {
+export function imageCorner(a, w = a.w, h = a.h) {
   const r = ((a.rot || 0) % 360 + 360) % 360;
   const right = { 0: [1, 0], 90: [0, 1], 180: [-1, 0], 270: [0, -1] }[r], down = { 0: [0, -1], 90: [1, 0], 180: [0, 1], 270: [-1, 0] }[r];
-  return [a.x + right[0] * a.w + down[0] * a.h, a.y + right[1] * a.w + down[1] * a.h];
+  return [a.x + right[0] * w + down[0] * h, a.y + right[1] * w + down[1] * h];
+}
+
+/**
+ * Resize handles of an annotation, in user space: corners for rectangles,
+ * ellipses and pen drawings, the two ends of lines and arrows, and the
+ * bottom-right corner (as seen on screen) of text boxes and signatures.
+ */
+export function handles(a) {
+  const corners = ([x1, y1, x2, y2]) => [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
+  switch (a.type) {
+    case "rect": case "ellipse": return corners(a.rect);
+    case "ink": return corners(bbox(a));
+    case "line": case "arrow": return [a.from, a.to];
+    case "image": return [imageCorner(a)];
+    case "text": return [imageCorner(a, textWidth(a), textHeight(a))];
+  }
+  return [];
+}
+
+/** A copy of annotation `o` with handle `i` dragged to (x, y). */
+export function resized(o, i, x, y) {
+  switch (o.type) {
+    case "rect": case "ellipse": {
+      const r = [...o.rect];
+      if (i === 0 || i === 3) r[0] = x; else r[2] = x;
+      if (i === 0 || i === 1) r[1] = y; else r[3] = y;
+      return { ...o, rect: normRect(r) };
+    }
+    case "line": case "arrow": return i === 0 ? { ...o, from: [x, y] } : { ...o, to: [x, y] };
+    case "ink": { // stretch the drawing from the opposite corner
+      const c = handles(o), [ax, ay] = c[(i + 2) % 4], [cx, cy] = c[i];
+      const k = (v) => (Math.abs(v) < 0.05 ? (v < 0 ? -0.05 : 0.05) : v);
+      const sx = k((x - ax) / (cx - ax || 1)), sy = k((y - ay) / (cy - ay || 1));
+      return { ...o, paths: o.paths.map((p) => p.map((v, j) => (j % 2 ? ay + (v - ay) * sy : ax + (v - ax) * sx))) };
+    }
+    case "image": case "text": { // scale from the top-left, keeping the shape (text: the font size)
+      const [cx, cy] = handles(o)[0], f = Math.hypot(x - o.x, y - o.y) / (Math.hypot(cx - o.x, cy - o.y) || 1);
+      return o.type === "image"
+        ? { ...o, w: Math.max(12, o.w * f), h: Math.max(12, o.w * f) * (o.h / o.w) }
+        : { ...o, size: Math.max(4, Math.round(o.size * f * 2) / 2) };
+    }
+  }
+  return o;
 }
 
 // Decoded images for image annotations, shared by every canvas that draws them.
