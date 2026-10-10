@@ -431,7 +431,7 @@ $("#split-ranges").addEventListener("focus", () => { dlg.querySelector("input[va
 const HELP = [
   ["Pages", [["Select pages", "Click · Ctrl+click to add · Shift+click for a range"], ["Select all / none", "Ctrl+A / Esc"], ["Reorder", "Drag pages (hold on touch screens)"], ["Rotate right / left", "R / Shift+R"], ["Duplicate / delete", "Ctrl+D / Delete"], ["Open a page in the editor", "Double-click it"]]],
   ["Editor tools", [["Select & move", "V"], ["Highlight / underline / strikethrough", "H / U / S"], ["Redact", "X"], ["Pen / rectangle / ellipse", "P / R / O"], ["Line / arrow", "L / A"], ["Text box / sticky note", "T / N"], ["Fill form / sign", "F / G"], ["Previous / next page", "← / →"], ["Zoom in / out / fit", "+ / − / 0 (or Ctrl+scroll)"], ["Delete the selected item", "Delete"]]],
-  ["Everywhere", [["Undo / redo", "Ctrl+Z / Ctrl+Shift+Z"], ["Save", "Ctrl+S"], ["Add files", "Ctrl+O"], ["This help", "?"]]],
+  ["Everywhere", [["Undo / redo", "Ctrl+Z / Ctrl+Shift+Z"], ["Save", "Ctrl+S"], ["Add files", "Ctrl+O"], ["Find in document", "Ctrl+F · Enter / Shift+Enter for next / previous"], ["This help", "?"]]],
 ];
 function showHelp() {
   const d = document.createElement("dialog"); d.className = "helpdlg";
@@ -471,6 +471,7 @@ grid.addEventListener("dblclick", (e) => { const c = cardOf(e.target); if (c) rv
 
 addEventListener("keydown", (e) => {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (mod && k === "f" && !e.altKey && S.pages.length && !e.target.closest?.("dialog")) { e.preventDefault(); if (!rview.isOpen) rview.open(S.pages.find((p) => S.sel.has(p.id))?.id); return rview.find(); }
   if (rview.isOpen && !mod && rview.keydown(e)) { e.preventDefault(); return; }
   if (mod && k === "o") { e.preventDefault(); return pick(S.pages.length ? insertPos() : null); }
   if (e.key === "?" && !e.target.closest?.("input, textarea, select, dialog")) { e.preventDefault(); return showHelp(); }

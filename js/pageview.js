@@ -55,6 +55,7 @@ export function createPageView(ctx) {
       <button class="icon" data-a="prev" title="Previous page (←)" aria-label="Previous page">${ph("caret-left")}</button>
       <span class="rpage" aria-live="polite"></span>
       <button class="icon" data-a="next" title="Next page (→)" aria-label="Next page">${ph("caret-right")}</button>
+      <span class="rfind" role="search" hidden><input type="search" class="finput" placeholder="Find in document" aria-label="Find in document" spellcheck="false"><span class="fcount" aria-live="polite"></span><button class="icon" data-a="fprev" title="Previous match (Shift+Enter)" aria-label="Previous match">${ph("caret-up")}</button><button class="icon" data-a="fnext" title="Next match (Enter)" aria-label="Next match">${ph("caret-down")}</button><button class="icon" data-a="fclose" title="Close (Esc)" aria-label="Close find">${ph("x")}</button></span>
       <span class="zoom"><button class="icon" data-a="zout" title="Zoom out (−)" aria-label="Zoom out">${ph("magnifying-glass-minus")}</button><button class="zlabel" data-a="zfit" title="Fit to screen (0)" aria-label="Fit to screen">100%</button><button class="icon" data-a="zin" title="Zoom in (+)" aria-label="Zoom in">${ph("magnifying-glass-plus")}</button></span>
     </div>
     <div class="rbody">
@@ -217,6 +218,13 @@ export function createPageView(ctx) {
       g.strokeStyle = "#ff2d55"; g.lineWidth = sel?.kind === "mark" && sel.i === i ? 3 : 1.5; g.strokeRect(x, y, w, h);
     });
     if (drag?.markRect) { const [x, y, w, h] = rectToViewport(vp, drag.markRect); g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(x, y, w, h); g.strokeStyle = "#ff2d55"; g.setLineDash([6, 4]); g.strokeRect(x, y, w, h); g.setLineDash([]); }
+    if (find.hits.length) {
+      find.hits.forEach((h, k) => {
+        if (h.pid !== id) return;
+        const on = k === find.cur;
+        for (const b of h.boxes) { const [x, y, w, h2] = rectToViewport(vp, normRect(b)); g.fillStyle = on ? "rgba(255,140,0,.45)" : "rgba(255,212,0,.35)"; g.fillRect(x, y, w, h2); if (on) { g.strokeStyle = "#e46a00"; g.lineWidth = 2 * scale(); g.strokeRect(x, y, w, h2); } }
+      });
+    }
     if (drag?.selRect) { const [x, y, w, h] = rectToViewport(vp, drag.selRect); g.strokeStyle = "#0F5468"; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(x, y, w, h); g.setLineDash([]); }
     const shown = list.filter((a) => !(editor && a === editor.annot)), isHl = (a) => a.type === "highlight";
     drawAnnots(gh, vp, shown, -1, (a) => !isHl(a));
@@ -551,6 +559,69 @@ export function createPageView(ctx) {
 
   /* --------------------------------- chrome --------------------------------- */
 
+  /* ---------------------------------- find --------------------------------- */
+
+  // Ctrl+F: search the text of every page; Enter / Shift+Enter step through the
+  // matches, switching pages as needed.
+  const find = { q: "", hits: [], cur: -1, token: 0 };
+  const fbar = $(".rfind"), finput = $(".finput"), fcount = $(".fcount");
+  let findTimer = 0;
+  async function runFind(q) {
+    const tok = ++find.token, re = textQuery(q);
+    find.q = q;
+    if (!re) { find.hits = []; find.cur = -1; fcount.textContent = ""; draw(); return; }
+    const hits = [];
+    for (const p of S.pages) {
+      if (p.blank) continue;
+      const m = findOnPage(await textItems(S.sources[p.src], p.index), re);
+      if (tok !== find.token) return;
+      for (const x of m) hits.push({ pid: p.id, boxes: x.boxes });
+    }
+    find.hits = hits;
+    // Start at the first match on or after the current page.
+    const at = pos(), k = hits.findIndex((h) => S.pages.findIndex((p) => p.id === h.pid) >= at);
+    find.cur = hits.length ? Math.max(0, k) : -1;
+    return showMatch();
+  }
+  function showMatch() {
+    fcount.textContent = !find.q.trim() ? "" : find.hits.length ? `${find.cur + 1} of ${find.hits.length}` : "No matches";
+    fbar.classList.toggle("none", !!find.q.trim() && !find.hits.length);
+    const h = find.hits[find.cur];
+    if (!h) { draw(); return; }
+    if (h.pid !== id) { finishEditor(); id = h.pid; sel = null; base = null; return show().then(reveal); }
+    else { draw(); reveal(); }
+  }
+  // Scroll the current match into view (when zoomed in).
+  function reveal() {
+    const h = find.hits[find.cur]; if (!h || !base || h.pid !== id) return;
+    const [x, y, w, hh] = rectToViewport(base.viewport, normRect(h.boxes[0])), k = scale();
+    const stage = $(".rstage"), sr = stage.getBoundingClientRect(), br = box.getBoundingClientRect();
+    const cx = br.left + (x + w / 2) / k - sr.left, cy = br.top + (y + hh / 2) / k - sr.top;
+    if (cx < 40 || cx > sr.width - 40) stage.scrollLeft += cx - sr.width / 2;
+    if (cy < 40 || cy > sr.height - 40) stage.scrollTop += cy - sr.height / 2;
+  }
+  function stepFind(d) {
+    if (find.q !== finput.value) { clearTimeout(findTimer); return runFind(finput.value); }
+    if (!find.hits.length) return;
+    find.cur = (find.cur + d + find.hits.length) % find.hits.length;
+    return showMatch();
+  }
+  function openFind(q) {
+    fbar.hidden = false;
+    if (q != null) finput.value = q;
+    finput.focus(); finput.select();
+    if (finput.value !== find.q) return runFind(finput.value);
+    return showMatch();
+  }
+  function closeFind() { fbar.hidden = true; find.token++; find.q = ""; find.hits = []; find.cur = -1; draw(); }
+  finput.addEventListener("input", () => { clearTimeout(findTimer); findTimer = setTimeout(() => runFind(finput.value), 150); });
+  finput.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // typing here must not trigger tool shortcuts
+    if (e.key === "Enter") { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+    else if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); finput.select(); }
+  });
+
   const go = (dlt) => { const i = pos() + dlt; if (S.pages[i]) { finishEditor(); id = S.pages[i].id; sel = null; base = null; show(); } };
   const setTool = (t) => { finishEditor(); opt.tool = t; sel = null; placing = null; save(); draw(); renderPanel(); renderFields(); };
   el.addEventListener("click", (e) => {
@@ -560,6 +631,9 @@ export function createPageView(ctx) {
     if (a === "back") close();
     else if (a === "prev") go(-1);
     else if (a === "next") go(1);
+    else if (a === "fnext") stepFind(1);
+    else if (a === "fprev") stepFind(-1);
+    else if (a === "fclose") closeFind();
     else if (a === "zin") zoomBy(1.25);
     else if (a === "zout") zoomBy(0.8);
     else if (a === "zfit") zoomBy(0);
@@ -582,10 +656,14 @@ export function createPageView(ctx) {
   new ResizeObserver(() => { if (!el.hidden) show(); }).observe($(".rstage"));
 
   function open(pageId, tool) { id = pageId ?? S.pages[0]?.id; if (tool) opt.tool = tool; sel = null; base = null; zoom = 1; el.hidden = false; ctx.onToggle(true); show(); }
-  function close() { finishEditor(); el.hidden = true; ctx.onToggle(false); }
+  function close() { finishEditor(); closeFind(); el.hidden = true; ctx.onToggle(false); }
 
   return {
     open, close,
+    /** Open the find bar (in the editor, opening it on the current page if needed). */
+    find(q) { if (el.hidden) open(id && page() ? id : undefined); return openFind(q); },
+    findStep: (d) => stepFind(d),
+    findState: () => ({ query: find.q, count: find.hits.length, current: find.cur + 1, page: find.hits[find.cur] ? S.pages.findIndex((p) => p.id === find.hits[find.cur].pid) + 1 : null }),
     lastMarkup: () => (opt.tool === "redact" ? "highlight" : opt.tool),
     get isOpen() { return !el.hidden; },
     refresh() { if (!el.hidden) { if (sel && (sel.kind === "annot" ? !annots()[sel.i] : !marks()[sel.i])) sel = null; show(); } },

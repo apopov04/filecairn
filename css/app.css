@@ -272,3 +272,14 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .helpdlg dd { margin: 0; color: var(--muted); text-align: right; }
 .helpdlg kbd { font: 12px var(--font); padding: 1px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--surface); color: var(--text); }
 dialog p { margin: 0; font-size: 14px; line-height: 1.5; }
+
+/* Find bar (Ctrl+F) in the editor's top bar. */
+.rfind { display: flex; align-items: center; gap: 2px; margin-left: auto; padding: 2px 2px 2px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.rfind[hidden] { display: none; }
+.rfind:focus-within { border-color: var(--accent); }
+.rfind .finput { border: 0; background: transparent; outline: none; width: 170px; font: inherit; color: inherit; padding: 4px 0; }
+.rfind .finput::-webkit-search-cancel-button { display: none; }
+.rfind .fcount { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 4.5em; text-align: right; padding-right: 4px; font-variant-numeric: tabular-nums; }
+.rfind.none .fcount { color: #c0392b; }
+.rfind:not([hidden]) + .zoom { margin-left: 8px; }
+@media (max-width: 760px) { .rfind .finput { width: 110px; } }

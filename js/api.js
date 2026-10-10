@@ -17,6 +17,8 @@ const METHODS = [
   ["duplicatePages(pages)", "Insert a copy after each page."],
   ["insertBlank(before, { width, height })", "Insert a blank page before page `before` (size in points; default: A4)."],
   ["select(pages)", "Select pages in the UI (empty array clears)."],
+  ["find(query)", "Show the find bar (as Ctrl+F does) and jump to the first match. Returns { query, count, current, page }. findNext(-1) goes back."],
+  ["findNext(step = 1)", "Go to the next (or, with -1, previous) find match. Returns the same shape as find()."],
   ["markText(query | { preset })", "Mark every match of plain text (case-insensitive) or a preset (\"email\", \"phone\", \"number\", \"iban\") for redaction. Returns { matches, pages }."],
   ["markArea(page, [x1, y1, x2, y2])", "Mark a rectangle for redaction, in PDF points from the page's bottom-left (as in the original page, before any rotation)."],
   ["clearMarks(pages?)", "Remove redaction marks (all pages if omitted)."],
@@ -30,7 +32,7 @@ const METHODS = [
   ["help()", "This list."],
 ];
 
-export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, actions }) {
+export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, actions, rview }) {
   const need = () => { if (!S.pages.length) throw new Error("No document open. Call filecairn.open(file) first."); };
   const ids = (pages, what = "pages") => {
     if (!Array.isArray(pages) || !pages.length) throw new Error(`${what} must be a non-empty array of page numbers (1–${S.pages.length}).`);
@@ -67,6 +69,8 @@ export function installApi({ S, addFiles, commit, render, buildPdf, undo, redo, 
     async duplicatePages(pages) { need(); commit(P.duplicate(S.pages, ids(pages)).pages, "duplicate"); return api.info(); },
     async insertBlank(before = S.pages.length + 1, { width = 595.28, height = 841.89 } = {}) { need(); commit(P.insertBlank(S.pages, before - 1, width, height).pages, "insert blank page"); return api.info(); },
     async select(pages = []) { need(); S.sel = pages.length ? ids(pages) : new Set(); render(); return api.info().selected; },
+    async find(query) { need(); await rview.find(String(query ?? "")); return rview.findState(); },
+    async findNext(step = 1) { need(); if (!rview.isOpen) throw new Error("Call find(query) first."); await rview.findStep(step < 0 ? -1 : 1); return rview.findState(); },
     async markText(query) {
       need();
       const re = typeof query === "string" ? textQuery(query) : PRESETS[query?.preset]?.re;

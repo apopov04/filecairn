@@ -13,7 +13,7 @@
 - Works offline once loaded. 
 
 ## Keyboard
-Click a page to select (Ctrl/Cmd+click adds, Shift+click selects a range). Ctrl+A select all, Esc select none, Delete removes, R rotates right (Shift+R left), Ctrl+D duplicates, Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+S save, Ctrl+O add files.
+Click a page to select (Ctrl/Cmd+click adds, Shift+click selects a range). Ctrl+A select all, Esc select none, Delete removes, R rotates right (Shift+R left), Ctrl+D duplicates, Ctrl+Z / Ctrl+Shift+Z undo/redo, Ctrl+S save, Ctrl+O add files, Ctrl+F find text in the document (Enter / Shift+Enter for next/previous match).
 
 ## For AI agents
 Drive it from the page with `window.filecairn` (call `filecairn.help()` for the list). Pages are numbered from 1; every method is async and undoable.
@@ -21,6 +21,7 @@ Drive it from the page with `window.filecairn` (call `filecairn.help()` for the 
 - `filecairn.info()` page count, sizes, rotations, selection
 - `await filecairn.movePages([3, 4], 1)`, `deletePages([2])`, `rotatePages([1], 90)`, `duplicatePages([1])`, `insertBlank(2)`
 - Redaction: `await filecairn.markText("John Smith")` or `markText({ preset: "email" })` (also phone, number, iban); `markArea(page, [x1, y1, x2, y2])` in PDF points from the page's bottom-left; `clearMarks()`. Marks are burned in by exportPdf/save.
+- Find (visual, like Ctrl+F): `await filecairn.find("invoice")` opens the editor's find bar and jumps to the first match, returning `{ query, count, current, page }`; `findNext()` / `findNext(-1)` step through matches.
 - Annotations: `await filecairn.addAnnotation(2, { type: "highlight", rects: [[x1, y1, x2, y2]] })`, also underline/strike/ink/rect/ellipse/line/arrow/text/note (see `filecairn.help()`); `info().pages[n].annotations`; `clearAnnotations()`.
 - Forms: `await filecairn.formFields(1)`, `fillField(1, "name", "Jane")` (checkbox: true/false; radio/dropdown: option value). Signatures: `addAnnotation(page, { type: "image", x, y, w, h, src: "data:image/png;base64,..." })` (x, y = top-left in PDF points).
 - `await filecairn.exportPdf({ pages: [1, 2], as: "dataurl" })` returns the PDF without downloading; `save()` downloads it.

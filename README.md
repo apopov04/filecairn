@@ -22,7 +22,7 @@ Part of the Silicairn suite, alongside [Photocairn](https://photocairn.silicairn
 Everything happens on your device. The page's Content Security Policy only allows it to load its own files, so documents can't be sent anywhere. Scripts embedded in PDFs are never run.
 
 ## Keyboard
-Click to select, Ctrl/Cmd+click to add, Shift+click for a range. `Ctrl+A` all, `Esc` none, `Delete` remove, `R` / `Shift+R` rotate, `Ctrl+D` duplicate, `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo, `Ctrl+S` save, `Ctrl+O` add files.
+Click to select, Ctrl/Cmd+click to add, Shift+click for a range. `Ctrl+A` all, `Esc` none, `Delete` remove, `R` / `Shift+R` rotate, `Ctrl+D` duplicate, `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo, `Ctrl+S` save, `Ctrl+O` add files, `Ctrl+F` find text in the document (`Enter` / `Shift+Enter` next/previous match).
 
 ## Development
 Plain ES modules, no build step.

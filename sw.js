@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached on install; pdf.js fonts/cmaps/wasm
 // are cached the first time they're used. App files are fetched with
 // cache: "no-cache" so updates show up on the next reload.
-const VERSION = "filecairn-v17";
+const VERSION = "filecairn-v18";
 const SHELL = [
   "./", "index.html", "css/app.css", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png",
   "js/main.js", "js/pages.js", "js/engine.js", "js/zip.js", "js/icons.js", "js/api.js", "js/redact.js", "js/pageview.js", "js/annots.js", "js/history.js", "js/forms.js", "js/sign.js", "js/fonts.js",
