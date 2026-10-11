@@ -1,6 +1,6 @@
 :root {
   --bg: #f6f6f8; --surface: #ffffff; --surface-2: #efeff3; --line: #e2e2e8;
-  --text: #17171b; --muted: #6c6c75; --accent: #0F5468; --accent-ink: #fff;
+  --text: #17171b; --muted: #6c6c75; --accent: #A51C30; --accent-ink: #fff;
   --danger: #d93f3f; --radius: 12px; --shadow: 0 8px 30px rgba(20, 20, 30, .10);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --thumb: 170px;
@@ -9,7 +9,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #111214; --surface: #1b1c20; --surface-2: #25262b; --line: #2f3036;
-    --text: #ececf1; --muted: #9a9aa5; --accent: #4FA3BA; --accent-ink: #0b0d12;
+    --text: #ececf1; --muted: #9a9aa5; --accent: #EC4A62; --accent-ink: #0b0d12;
     --shadow: 0 8px 30px rgba(0, 0, 0, .45);
   }
 }
@@ -217,7 +217,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 
 /* Form fields (Fill form tool) */
 .rfields { position: absolute; inset: 0; pointer-events: none; line-height: normal; }
-.rfields .ff { position: absolute; margin: 0; box-sizing: border-box; border: 1px solid rgba(15,84,104,.35); background: rgba(201,229,238,.55); color: #111; border-radius: 2px; padding: 0 4px; font-family: Helvetica, Arial, sans-serif; }
+.rfields .ff { position: absolute; margin: 0; box-sizing: border-box; border: 1px solid rgba(165,28,48,.35); background: rgba(248,222,226,.55); color: #111; border-radius: 2px; padding: 0 4px; font-family: Helvetica, Arial, sans-serif; }
 .rfields textarea.ff { padding: 3px 4px; resize: none; line-height: 1.25; }
 .rfields .ff-check, .rfields .ff-radio { padding: 0; accent-color: var(--accent); }
 .rfields.active { pointer-events: auto; }

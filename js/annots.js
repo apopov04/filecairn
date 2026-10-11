@@ -14,7 +14,7 @@ import { cssFamily, ensureFont } from "./fonts.js";
 
 export const COLORS = {
   highlight: ["#ffd400", "#7dffa6", "#7fd6ff", "#ff9bd2", "#ffa45c"],
-  ink: ["#d93f3f", "#0F5468", "#1d1d1f", "#2f7d32", "#7b3fd9", "#ffffff"],
+  ink: ["#d93f3f", "#1a3fa0", "#1d1d1f", "#2f7d32", "#7b3fd9", "#ffffff"],
   note: ["#ffd400", "#7fd6ff", "#ff9bd2", "#7dffa6"],
 };
 
@@ -227,7 +227,7 @@ export function drawAnnots(ctx, vp, annots, selected = -1, skip = null) {
   });
   function outline(an) {
     const [x, y, w, h] = box(bbox(an));
-    ctx.save(); ctx.strokeStyle = "#0F5468"; ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeRect(x - 4, y - 4, w + 8, h + 8); ctx.restore();
+    ctx.save(); ctx.strokeStyle = "#A51C30"; ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeRect(x - 4, y - 4, w + 8, h + 8); ctx.restore();
   }
   ctx.restore();
 }

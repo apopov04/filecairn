@@ -225,7 +225,7 @@ export function createPageView(ctx) {
         for (const b of h.boxes) { const [x, y, w, h2] = rectToViewport(vp, normRect(b)); g.fillStyle = on ? "rgba(255,140,0,.45)" : "rgba(255,212,0,.35)"; g.fillRect(x, y, w, h2); if (on) { g.strokeStyle = "#e46a00"; g.lineWidth = 2 * scale(); g.strokeRect(x, y, w, h2); } }
       });
     }
-    if (drag?.selRect) { const [x, y, w, h] = rectToViewport(vp, drag.selRect); g.strokeStyle = "#0F5468"; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(x, y, w, h); g.setLineDash([]); }
+    if (drag?.selRect) { const [x, y, w, h] = rectToViewport(vp, drag.selRect); g.strokeStyle = "#A51C30"; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(x, y, w, h); g.setLineDash([]); }
     const shown = list.filter((a) => !(editor && a === editor.annot)), isHl = (a) => a.type === "highlight";
     drawAnnots(gh, vp, shown, -1, (a) => !isHl(a));
     drawAnnots(g, vp, shown, sel?.kind === "annot" ? sel.i : -1, isHl);
@@ -233,7 +233,7 @@ export function createPageView(ctx) {
     const sa = sel?.kind === "annot" ? (live?.i === sel.i ? live.a : drag?.replace === sel.i && drag.preview ? drag.preview : annots()[sel.i]) : null;
     if (sa && (opt.tool === "select" || (opt.tool === "sign" && sa.type === "image"))) {
       const [a, b, c, d, e, f] = vp.transform, hs = 6 * scale();
-      g.fillStyle = "#fff"; g.strokeStyle = "#0F5468"; g.lineWidth = 2 * scale(); g.setLineDash([]);
+      g.fillStyle = "#fff"; g.strokeStyle = "#A51C30"; g.lineWidth = 2 * scale(); g.setLineDash([]);
       for (const [hx0, hy0] of handles(sa)) { const hx = a * hx0 + c * hy0 + e, hy = b * hx0 + d * hy0 + f; g.fillRect(hx - hs, hy - hs, hs * 2, hs * 2); g.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2); }
     }
   }
