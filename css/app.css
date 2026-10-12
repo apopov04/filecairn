@@ -26,11 +26,11 @@ a { color: var(--accent); }
 #app.empty { grid-template-rows: auto minmax(0, 1fr); }
 #app.empty .needs-doc { display: none !important; }
 
-.topbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); background: var(--surface); }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 650; color: var(--text); text-decoration: none; font-size: 15px; flex: none; }
+.topbar { display: flex; align-items: center; gap: 4px; padding: 4px 8px; padding-top: max(4px, env(safe-area-inset-top)); min-height: 44px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -.01em; color: var(--text); text-decoration: none; font-size: 14px; flex: none; margin-right: 6px; }
 .doc-name { flex: 1; min-width: 0; max-width: 360px; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 6px 8px; color: var(--muted); }
 .doc-name:hover, .doc-name:focus { border-color: var(--line); background: var(--surface); color: var(--text); outline: none; }
-.top-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.top-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 
 button { cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .12s, border-color .12s; }
 button:hover:not(:disabled) { background: var(--surface-2); }
@@ -96,7 +96,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 @media (max-width: 640px) {
-  .topbar { gap: 6px; padding: 6px 8px; }
+  .topbar { gap: 4px; padding: 4px 8px; padding-top: max(4px, env(safe-area-inset-top)); }
   .brand span { display: none; }
   .top-actions .lbl { display: none; }
   .grid { gap: 10px; padding: 12px; --thumb: 130px; }
